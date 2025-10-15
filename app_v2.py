@@ -514,7 +514,7 @@ def main():
     st.sidebar.info(model_info)
     global os
     # API configuration
-    default_api_key = os.getenv("NVIDIA_API_KEY", "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")
+    default_api_key = os.getenv("NVIDIA_API_KEY", "")
     api_key = st.sidebar.text_input(
         "NVIDIA API Key:",
         value=default_api_key,

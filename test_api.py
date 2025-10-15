@@ -11,7 +11,7 @@ def test_alphafold2_api():
     """Test the AlphaFold2 API with a simple sequence"""
     
     # Configuration
-    api_key = "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"
+    api_key = ""
     endpoint = "https://api.nvcf.nvidia.com"
     function_id = "e3dfc6dd-fc27-4f0e-9ede-94412256af18"  # AlphaFold2
     

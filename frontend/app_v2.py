@@ -7,20 +7,97 @@ import streamlit as st
 import requests
 import json
 import os
+import sys
 import tempfile
+from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
 import py3Dmol
 import streamlit.components.v1 as components
 import re
 import time
-from protein_models import PROTEIN_MODELS
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.protein_models import PROTEIN_MODELS
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Protein Structure Prediction with NVIDIA AI",
+    page_title="NVIDIA Protein Structure Prediction",
     page_icon="🧬",
     layout="wide"
 )
+
+# NVIDIA Theme CSS
+st.markdown("""
+<style>
+    /* NVIDIA Brand Colors */
+    :root {
+        --nvidia-green: #76B900;
+        --nvidia-dark: #1A1A1A;
+    }
+    
+    /* Headers with NVIDIA styling */
+    h1, h2, h3 {
+        color: #1A1A1A !important;
+        font-family: 'NVIDIA Sans', Arial, sans-serif;
+    }
+    
+    h1 {
+        border-bottom: 3px solid #76B900;
+        padding-bottom: 10px;
+    }
+    
+    /* Buttons */
+    .stButton > button {
+        background: linear-gradient(135deg, #76B900 0%, #5A8F00 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 10px 24px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #5A8F00 0%, #76B900 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(118, 185, 0, 0.4);
+    }
+    
+    /* Success messages */
+    .stSuccess {
+        background-color: rgba(118, 185, 0, 0.1);
+        border-left: 4px solid #76B900;
+    }
+    
+    /* Metrics */
+    [data-testid="stMetricValue"] {
+        color: #76B900;
+        font-weight: 700;
+    }
+    
+    /* Download button */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, #00D4AA 0%, #00A88A 100%);
+        color: white;
+        font-weight: 600;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1A1A1A 0%, #2D2D2D 100%);
+    }
+    
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 {
+        color: #76B900 !important;
+    }
+    
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label {
+        color: #E5E5E5 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def validate_protein_sequence(sequence: str) -> Tuple[bool, str]:
     """
@@ -481,14 +558,48 @@ def main():
     """
     Main Streamlit application
     """
-    # Header
-    st.title("🧬 Protein Structure Prediction with NVIDIA AI")
+    # NVIDIA Branded Header
+    col1, col2 = st.columns([1, 5])
+    
+    with col1:
+        try:
+            st.image("image/nvidia.jpg", width=120)
+        except:
+            st.markdown("### NVIDIA")
+    
+    with col2:
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%); 
+                    padding: 20px; border-radius: 8px; border-left: 6px solid #76B900;">
+            <h1 style="color: #FFFFFF; margin: 0; border: none;">
+                🧬 Protein Structure Prediction
+            </h1>
+            <p style="color: #76B900; font-weight: 600; margin: 10px 0 0 0;">
+                Powered by NVIDIA AI Models
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     st.markdown("""
-    This application uses NVIDIA's Cloud Functions to predict protein 3D structures from amino acid sequences.
-    Select a model, enter your sequence, and generate a 3D structure prediction.
-    """)
+    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #00D4AA;">
+        <p style="margin: 0; color: #1A1A1A;">
+            Predict protein 3D structures from amino acid sequences using NVIDIA's state-of-the-art 
+            Cloud Functions. Select a model, enter your sequence, and generate accurate structure predictions.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Sidebar configuration
+    try:
+        st.sidebar.image("image/nvidia.jpg", use_container_width=True)
+    except:
+        st.sidebar.markdown("# NVIDIA")
+    
+    st.sidebar.markdown("---")
     st.sidebar.header("⚙️ Configuration")
     
     # Model selection
@@ -752,14 +863,25 @@ def main():
                 st.warning("⚠️ PDB content appears to be malformed or missing ATOM records")
                 st.text_area("Raw Response:", pdb_content, height=400)
     
-    # Footer
+    # NVIDIA Footer
     st.markdown("---")
-    st.markdown("""
-    **About:** This application uses NVIDIA's Cloud Functions for AI-powered protein structure prediction. 
-    The predictions are computational estimates and should be validated through experimental methods.
     
-    **Models Available:** OpenFold2, AlphaFold2, AlphaFold2 Multimer, Boltz2
-    """)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; color: #666666; padding: 20px;">
+            <p style="font-size: 14px; margin-bottom: 10px;">
+                <strong>Powered by NVIDIA AI</strong><br>
+                Protein structure prediction using NVIDIA Cloud Functions
+            </p>
+            <p style="font-size: 12px; color: #999999;">
+                <strong>Available Models:</strong> OpenFold2, AlphaFold2, AlphaFold2 Multimer, Boltz2<br>
+                Predictions are computational estimates. Validate experimentally.<br>
+                © 2025 NVIDIA Corporation. All rights reserved.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

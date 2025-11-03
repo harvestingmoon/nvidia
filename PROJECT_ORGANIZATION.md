@@ -90,23 +90,6 @@ streamlit run frontend/binding_workflow_app.py --server.port 8501
 
 ## 📝 Key Benefits
 
-### ✅ Better Organization
-- Clear separation of concerns
-- Easy to find and maintain files
-- Professional project structure
-
-### ✅ Scalability
-- Easy to add new features
-- Modular architecture
-- Reusable components
-
-### ✅ Maintainability
-- Logical file grouping
-- Clear import paths
-- Better navigation
-
-## 🔍 Module Purposes
-
 ### `frontend/`
 - **Purpose**: User-facing applications
 - **Contains**: Streamlit web apps

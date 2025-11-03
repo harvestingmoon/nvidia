@@ -443,7 +443,7 @@ def render_progress_stepper():
         ("Results", WorkflowStage.RESULTS)
     ]
     
-    st.markdown("### 🔬 Workflow Progress")
+    st.markdown("### Workflow Progress")
     
     # Custom CSS for stage-specific button styling
     stage_styles = """
@@ -591,17 +591,24 @@ def calculate_overall_progress(session: WorkflowSession) -> float:
 
 def render_sidebar():
     """Render sidebar with session management"""
-    # NVIDIA Logo in Sidebar
-    try:
-        st.sidebar.image("image/nvidia.jpg", use_container_width=True)
-    except:
-        st.sidebar.markdown("# NVIDIA")
-    st.sidebar.markdown("---")
-    
     session = st.session_state.workflow_session
     
+    # NVIDIA Logo in Sidebar - Clickable to return to start
+    try:
+        # Display logo first
+        st.sidebar.image("image/nvidia.jpg", use_container_width=True)
+    except Exception as e:
+        st.sidebar.markdown("# NVIDIA")
+    
+    # Return to start button below logo
+    if st.sidebar.button("Return to Start", key="logo_home", use_container_width=True, help="Click to return to Target Input"):
+        session.advance_to_stage(WorkflowStage.TARGET_INPUT)
+        st.rerun()
+    
+    st.sidebar.title("Binding Workflow")
+    
     # Project info
-    st.sidebar.subheader("📁 Project")
+    st.sidebar.subheader("Project")
     project_name = st.sidebar.text_input(
         "Project Name",
         value=session.project_name,
@@ -615,10 +622,13 @@ def render_sidebar():
     st.sidebar.caption(f"Created: {session.created_at[:19]}")
     st.sidebar.caption(f"Updated: {session.last_updated[:19]}")
     
-    st.sidebar.markdown("---")
+    # NVIDIA-styled divider
+    st.sidebar.markdown("""
+        <hr style="height:3px;border:none;background:linear-gradient(90deg, #76B900 0%, #00D4AA 100%);margin:20px 0;" />
+    """, unsafe_allow_html=True)
     
     # API Configuration
-    st.sidebar.subheader("⚙️ Configuration")
+    st.sidebar.subheader("Configuration")
     
     demo_mode = st.sidebar.checkbox(
         "Demo Mode (No API)",
@@ -647,49 +657,6 @@ def render_sidebar():
         # Show warning if no API key is configured
         if not st.session_state.api_key:
             st.sidebar.warning("⚠️ No API key configured. Please add NVIDIA_API_KEY to your .env file or enter it above.")
-    
-    st.sidebar.markdown("---")
-    
-    # Session management
-    st.sidebar.subheader("💾 Session")
-    
-    col1, col2 = st.sidebar.columns(2)
-    
-    with col1:
-        if st.button("💾 Save", use_container_width=True):
-            save_session()
-    
-    with col2:
-        if st.button("📂 Load", use_container_width=True):
-            load_session()
-    
-    if st.sidebar.button("🔄 Reset Workflow", use_container_width=True):
-        if st.sidebar.checkbox("Confirm reset?"):
-            st.session_state.workflow_session = WorkflowSession.create_new()
-            st.rerun()
-    
-    # Export options
-    with st.sidebar.expander("📤 Export Options"):
-        if st.button("Export as JSON"):
-            export_json = session.to_json()
-            st.download_button(
-                "Download JSON",
-                data=export_json,
-                file_name=f"{session.project_name}_{session.session_id}.json",
-                mime="application/json"
-            )
-    
-    # Notes
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📝 Notes")
-    notes = st.sidebar.text_area(
-        "Project Notes",
-        value=session.notes,
-        height=100,
-        key="notes_input"
-    )
-    if notes != session.notes:
-        session.notes = notes
 
 
 def save_session():
@@ -928,15 +895,15 @@ def render_target_input_stage():
     target = session.target
     
     # Project mode selection
-    st.subheader("📁 Project Mode")
+    st.subheader("Project Mode")
     project_mode = st.radio(
         "Choose how to start",
-        ["🆕 Create New Project", "📂 Load Previous Results"],
+        ["Create New Project", "Load Previous Results"],
         horizontal=True,
         key="project_mode"
     )
     
-    if project_mode == "📂 Load Previous Results":
+    if project_mode == "Load Previous Results":
         st.markdown("---")
         st.markdown("### Load from existing pipeline output")
         
@@ -953,13 +920,13 @@ def render_target_input_stage():
                 folder_name = os.path.basename(folder)
                 if '_AF2_output' in folder_name:
                     project = folder_name.replace('_AF2_output', '')
-                    display = f"🤖 {project} (AlphaFold2)"
+                    display = f"{project} (AlphaFold2)"
                 elif '_OF3_output' in folder_name:
                     project = folder_name.replace('_OF3_output', '')
-                    display = f"🧬 {project} (OpenFold3)"
+                    display = f"{project} (OpenFold3)"
                 else:
                     project = folder_name.replace('_output', '')
-                    display = f"📦 {project}"
+                    display = f"{project}"
                 output_options[display] = folder
             
             selected_display = st.selectbox(
@@ -973,7 +940,7 @@ def render_target_input_stage():
             # Show folder details
             col1, col2 = st.columns(2)
             with col1:
-                st.info(f"📂 Folder: `{selected_folder}`")
+                st.info(f"Folder: `{selected_folder}`")
             with col2:
                 # Check what stages are available
                 folder_name = os.path.basename(selected_folder)
@@ -991,7 +958,7 @@ def render_target_input_stage():
                 
                 st.success(f"✅ Stages: {', '.join(stages_text)}")
             
-            if st.button("🔄 Load This Project", type="primary", use_container_width=True):
+            if st.button("Load This Project", type="primary", use_container_width=True):
                 with st.spinner("Loading pipeline results..."):
                     load_success = load_pipeline_results(session, selected_folder)
                     if load_success:
@@ -1083,7 +1050,7 @@ def render_target_input_stage():
                     st.info("PDB fetching not yet implemented")
     
     # Binding site specification (optional)
-    with st.expander("⚙️ Advanced: Specify Binding Site (Optional)"):
+    with st.expander("Advanced: Specify Binding Site (Optional)"):
         st.markdown("Specify residues that should be part of the binding interface")
         binding_site = st.text_input(
             "Binding Site Residues",
@@ -1159,7 +1126,7 @@ def render_target_prediction_stage():
         selected_model = model_options[selected_model_name]
         
         # Predict button
-        if st.button("🔬 Predict Structure", type="primary"):
+        if st.button("Predict Structure", type="primary"):
             if not st.session_state.api_key and not st.session_state.demo_mode:
                 st.error("❌ Please provide an API key or enable Demo Mode")
                 return
@@ -1195,7 +1162,7 @@ def render_target_prediction_stage():
                     target.model_used = selected_model_name
                     
                     session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.COMPLETED)
-                    st.success("🎉 Structure prediction completed!")
+                    st.success("Structure prediction completed!")
                     st.rerun()
                     
                 except Exception as e:
@@ -1213,7 +1180,7 @@ def render_target_prediction_stage():
         
         # Download button
         st.download_button(
-            "📥 Download Target PDB",
+            "Download Target PDB",
             data=target.pdb_content,
             file_name=f"target_{session.session_id}.pdb",
             mime="chemical/x-pdb"
@@ -1319,13 +1286,13 @@ def render_binder_scaffold_stage():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("🚀 Generate Binder Scaffold", type="primary", use_container_width=True):
+            if st.button("Generate Binder Scaffold", type="primary", use_container_width=True):
                 pipeline = get_pipeline()
                 
                 # Show debug info
-                st.info("🔍 **Debug**: Running RFDiffusion... Check your terminal for detailed logs!")
+                st.info("Debug: Running RFDiffusion... Check your terminal for detailed logs!")
                 
-                with st.spinner("🧬 Running RFDiffusion... This may take a few minutes..."):
+                with st.spinner("Running RFDiffusion... This may take a few minutes..."):
                     success, msg = pipeline.run_scaffold_design(
                         contigs=contigs,
                         hotspot_res=hotspots,
@@ -1341,10 +1308,10 @@ def render_binder_scaffold_stage():
                         st.error(f"❌ {msg}")
     else:
         # Show regenerate option for completed stage
-        with st.expander("♻️ Regenerate with Different Parameters"):
+        with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("♻️ Regenerate Scaffold", type="secondary", use_container_width=True):
+                if st.button("Regenerate Scaffold", type="secondary", use_container_width=True):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.BINDER_SCAFFOLD_DESIGN, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -1428,7 +1395,7 @@ def render_binder_sequence_stage():
         with st.expander("📋 View Designed Sequences", expanded=True):
             for i, seq in enumerate(binder.mpnn_sequences):
                 score = binder.mpnn_scores[i] if i < len(binder.mpnn_scores) else None
-                selected = "🟢" if i == binder.selected_sequence_idx else "⚪"
+                selected = "[*]" if i == binder.selected_sequence_idx else "[ ]"
                 
                 col1, col2, col3 = st.columns([1, 8, 2])
                 with col1:
@@ -1454,13 +1421,13 @@ def render_binder_sequence_stage():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("🚀 Design Sequences", type="primary", use_container_width=True):
+            if st.button("Design Sequences", type="primary", use_container_width=True):
                 pipeline = get_pipeline()
                 
                 # Show debug info
-                st.info("🔍 **Debug**: Running ProteinMPNN... Check your terminal for detailed logs!")
+                st.info("Debug: Running ProteinMPNN... Check your terminal for detailed logs!")
                 
-                with st.spinner("🧬 Running ProteinMPNN... Designing sequences..."):
+                with st.spinner("Running ProteinMPNN... Designing sequences..."):
                     success, msg = pipeline.run_sequence_design(
                         num_sequences=num_sequences,
                         sampling_temp=sampling_temp
@@ -1475,10 +1442,10 @@ def render_binder_sequence_stage():
                         st.error(f"❌ {msg}")
     else:
         # Show regenerate option for completed stage
-        with st.expander("♻️ Regenerate with Different Parameters"):
+        with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("♻️ Regenerate Sequences", type="secondary", use_container_width=True):
+                if st.button("Regenerate Sequences", type="secondary", use_container_width=True):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.BINDER_SEQUENCE_DESIGN, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -1570,7 +1537,7 @@ def render_complex_prediction_stage():
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            with st.expander("🧬 View Complex Structure", expanded=True):
+            with st.expander("View Complex Structure", expanded=True):
                 viz_html = create_3d_visualization(complex_data.complex_pdb)
                 st.components.v1.html(viz_html, height=600, scrolling=False)
         
@@ -1580,15 +1547,15 @@ def render_complex_prediction_stage():
             st.metric("Method", complex_data.docking_method)
             
             if complex_data.plddt_score > 90:
-                st.success("🎉 Excellent confidence!")
+                st.success("Excellent confidence!")
             elif complex_data.plddt_score > 70:
-                st.info("👍 Good confidence")
+                st.info("Good confidence")
             else:
                 st.warning("⚠️ Low confidence")
         
         # Show rankings if multiple candidates
         if complex_data.candidate_rankings:
-            with st.expander(f"📊 View All {len(complex_data.candidate_rankings)} Candidates"):
+            with st.expander(f"View All {len(complex_data.candidate_rankings)} Candidates"):
                 for i, candidate in enumerate(complex_data.candidate_rankings):
                     col1, col2, col3, col4 = st.columns([1, 6, 2, 2])
                     with col1:
@@ -1609,17 +1576,17 @@ def render_complex_prediction_stage():
         
         with col2:
             if num_candidates > 1:
-                button_label = f"🚀 Predict {num_candidates} Complexes"
+                button_label = f"Predict {num_candidates} Complexes"
             else:
-                button_label = "🚀 Predict Complex"
+                button_label = "Predict Complex"
             
             if st.button(button_label, type="primary", use_container_width=True):
                 pipeline = get_pipeline()
                 
                 # Show debug info
-                st.info(f"🔍 **Debug**: Running AlphaFold-Multimer for {num_candidates} candidate(s)... Check your terminal for detailed logs!")
+                st.info(f"Debug: Running AlphaFold-Multimer for {num_candidates} candidate(s)... Check your terminal for detailed logs!")
                 
-                with st.spinner(f"🧬 Running AlphaFold-Multimer for {num_candidates} candidate(s)... This will take several minutes..."):
+                with st.spinner(f"Running AlphaFold-Multimer for {num_candidates} candidate(s)... This will take several minutes..."):
                     if num_candidates > 1:
                         success, msg = pipeline.run_batch_complex_prediction(
                             num_candidates=num_candidates,
@@ -1640,10 +1607,10 @@ def render_complex_prediction_stage():
                         st.error(f"❌ {msg}")
     else:
         # Show regenerate option for completed stage
-        with st.expander("♻️ Regenerate with Different Parameters"):
+        with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("♻️ Regenerate Complex", type="secondary", use_container_width=True):
+                if st.button("Regenerate Complex", type="secondary", use_container_width=True):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.COMPLEX_PREDICTION, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -1704,7 +1671,7 @@ def render_binder_prediction_stage():
     selected_model = model_options[selected_model_name]
     
     # Predict button
-    if st.button("🔬 Predict Binder Structure", type="primary"):
+    if st.button("Predict Binder Structure", type="primary"):
         if not st.session_state.api_key and not st.session_state.demo_mode:
             st.error("❌ Please provide an API key or enable Demo Mode")
             return
@@ -1737,7 +1704,7 @@ def render_binder_prediction_stage():
                 binder.model_used = selected_model_name
                 
                 session.update_stage_status(WorkflowStage.BINDER_PREDICTION, StageStatus.COMPLETED)
-                st.success("🎉 Binder structure prediction completed!")
+                st.success("Binder structure prediction completed!")
                 st.rerun()
                 
             except Exception as e:
@@ -1754,7 +1721,7 @@ def render_binder_prediction_stage():
             st.error(f"Visualization error: {str(e)}")
         
         st.download_button(
-            "📥 Download Binder PDB",
+            "Download Binder PDB",
             data=binder.pdb_content,
             file_name=f"binder_{session.session_id}.pdb",
             mime="chemical/x-pdb"
@@ -1810,7 +1777,7 @@ def render_complex_analysis_stage():
         )
     
     # Analyze button
-    if st.button("🔬 Analyze Binding Interface", type="primary"):
+    if st.button("Analyze Binding Interface", type="primary"):
         session.update_stage_status(WorkflowStage.COMPLEX_ANALYSIS, StageStatus.IN_PROGRESS)
         
         with st.spinner("Analyzing binding interface..."):
@@ -1876,7 +1843,7 @@ def render_analysis_results(session: WorkflowSession):
     """Render analysis results"""
     complex_data = session.complex
     
-    st.subheader("📊 Analysis Results")
+    st.subheader("Analysis Results")
     
     # Quality metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1905,7 +1872,7 @@ def render_analysis_results(session: WorkflowSession):
     
     # Download
     st.download_button(
-        "📥 Download Complex PDB",
+        "Download Complex PDB",
         data=complex_data.complex_pdb,
         file_name=f"complex_{session.session_id}.pdb",
         mime="chemical/x-pdb"
@@ -1945,7 +1912,7 @@ def render_results_dashboard(session: WorkflowSession):
     # Header with overall status
     quality_score = complex_data.quality_score or 0
     recommendation_color = (
-        "🟢" if quality_score >= 70 else
+        "[*]" if quality_score >= 70 else
         "🟡" if quality_score >= 50 else "🔴"
     )
     

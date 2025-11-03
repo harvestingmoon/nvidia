@@ -1,27 +1,27 @@
 
 nvidia/
 │
-├── 📱 frontend/                    # Web Applications
+├── frontend/                      # Web Applications
 │   ├── app_v2.py                  # Single structure prediction app
 │   ├── binding_workflow_app.py    # Multi-step binding workflow app
 │   └── __init__.py                # Package initialization
 │
-├── 🔄 workflow/                    # Workflow Management
+├── workflow/                      # Workflow Management
 │   ├── workflow_state.py          # State management & sessions
 │   ├── binding_analysis.py        # Interface analysis algorithms
 │   └── __init__.py                # Package exports
 │
-├── ⚙️ core/                        # Core Utilities
+├── core/                          # Core Utilities
 │   ├── protein_models.py          # Model configurations (NVIDIA APIs)
 │   ├── pdb_viewer.py              # 3D visualization utilities
 │   └── __init__.py                # Package exports
 │
-├── 🚀 scripts/                     # Launch Scripts
+├── scripts/                       # Launch Scripts
 │   ├── launch.sh                  # Launch single structure app (port 8502)
 │   ├── launch_workflow.sh         # Launch workflow app (port 8501)
 │   └── setup.sh                   # Environment setup script
 │
-├── 📚 docs/                        # Documentation
+├── docs/                          # Documentation
 │   ├── README.md                  # Main documentation
 │   ├── README_WORKFLOW.md         # Workflow app guide
 │   ├── APP_COMPARISON.md          # App comparison
@@ -29,19 +29,19 @@ nvidia/
 │   ├── ALPHAFOLD2_IMPROVEMENTS.md # AlphaFold2 notes
 │   └── PDB_VIEWING_IMPROVEMENTS.md# PDB viewer notes
 │
-├── 📦 Configuration Files
+├── Configuration Files
 │   ├── requirements.txt           # Python dependencies
 │   ├── .env.template              # Environment template
 │   └── README.md                  # Main project README
 │
-└── 🗂️ Other
+└── Other
     ├── old_code/                  # Archived code
     ├── .venv/                     # Virtual environment
     ├── .git/                      # Git repository
     └── __pycache__/               # Python cache
 ```
 
-## 🔧 Import Changes
+## Import Changes
 
 ### Before (Old Structure)
 ```python
@@ -57,7 +57,7 @@ from workflow.workflow_state import WorkflowSession
 from workflow.binding_analysis import parse_pdb_content
 ```
 
-## 🚀 Running Applications
+## Running Applications
 
 ### Method 1: Using Scripts (Recommended)
 
@@ -88,7 +88,7 @@ streamlit run frontend/app_v2.py --server.port 8502
 streamlit run frontend/binding_workflow_app.py --server.port 8501
 ```
 
-## 📝 Key Benefits
+## Key Benefits
 
 ### `frontend/`
 - **Purpose**: User-facing applications
@@ -117,7 +117,7 @@ streamlit run frontend/binding_workflow_app.py --server.port 8501
 - **Contains**: All markdown documentation files
 - **No code**: Pure documentation
 
-## 🐛 Bug Fixes Applied
+## Bug Fixes Applied
 
 ### 1. Input Type Mapping Issue
 **Problem**: ValueError when loading saved sessions
@@ -167,14 +167,14 @@ bash scripts/launch_workflow.sh
 4. Shared utilities → `core/`
 5. Documentation → `docs/`
 
-## 💡 Tips
+## Tips
 
 1. **Always run from project root**: Scripts expect to be run from `/Users/bytedance/Documents/nvidia`
 2. **Use the launch scripts**: They handle PYTHONPATH and environment setup
 3. **Check import paths**: Use full module paths (e.g., `from workflow.xxx import yyy`)
 4. **Save sessions**: Workflow app supports save/load - use it!
 
-## 🔗 Quick Reference
+## Quick Reference
 
 | Task | Command |
 |------|---------|
@@ -186,4 +186,4 @@ bash scripts/launch_workflow.sh
 
 ---
 
-**Everything is now organized and ready to use!** 🎉
+**Everything is now organized and ready to use!**

@@ -15,6 +15,10 @@ import py3Dmol
 import streamlit.components.v1 as components
 import re
 import time
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -561,12 +565,6 @@ def main():
     # NVIDIA Branded Header
     col1, col2 = st.columns([1, 5])
     
-    with col1:
-        try:
-            st.image("image/nvidia.jpg", width=120)
-        except:
-            st.markdown("### NVIDIA")
-    
     with col2:
         st.markdown("""
         <div style="background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%); 
@@ -623,9 +621,9 @@ def main():
         model_info += "\n\n🚀 **Processing Time**: 3-7 minutes\n💡 **Tip**: Latest improvements"
     
     st.sidebar.info(model_info)
-    global os
-    # API configuration
-    default_api_key = os.getenv("NVIDIA_API_KEY", "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")
+    
+    # API configuration - load from environment
+    default_api_key = os.getenv("NVIDIA_API_KEY") or os.getenv("NGC_CLI_API_KEY") or ""
     api_key = st.sidebar.text_input(
         "NVIDIA API Key:",
         value=default_api_key,

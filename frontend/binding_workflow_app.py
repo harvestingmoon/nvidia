@@ -8,11 +8,16 @@ import streamlit as st
 import time
 import json
 import sys
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 import plotly.graph_objects as go
 import plotly.express as px
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -21,6 +26,7 @@ from workflow.workflow_state import (
     WorkflowSession, WorkflowStage, StageStatus, 
     WorkflowValidator, TargetProteinData, BinderProteinData
 )
+from workflow.generative_pipeline import GenerativePipeline
 from workflow.binding_analysis import (
     parse_pdb_content, find_interface_residues, 
     assess_binding_quality, combine_pdbs, generate_contact_map_data
@@ -89,6 +95,13 @@ st.markdown("""
         font-weight: 700;
         font-size: 16px;
         text-shadow: 0 0 10px rgba(118, 185, 0, 0.3);
+        padding: 10px;
+        text-align: center;
+        display: block;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .stage-active {
@@ -96,18 +109,39 @@ st.markdown("""
         font-weight: 700;
         font-size: 16px;
         animation: pulse 2s infinite;
+        padding: 10px;
+        text-align: center;
+        display: block;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .stage-pending {
         color: #666666;
         font-weight: 500;
         font-size: 16px;
+        padding: 10px;
+        text-align: center;
+        display: block;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .stage-failed {
         color: #FF3838;
         font-weight: 700;
         font-size: 16px;
+        padding: 10px;
+        text-align: center;
+        display: block;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     @keyframes pulse {
@@ -130,23 +164,26 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2);
     }
     
-    /* Buttons */
+    /* Buttons - Base styles */
     .stButton > button {
-        background: linear-gradient(135deg, #76B900 0%, #5A8F00 100%);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 10px 24px;
-        font-weight: 600;
-        font-size: 16px;
-        transition: all 0.3s;
-        box-shadow: 0 2px 8px rgba(118, 185, 0, 0.3);
+        border-radius: 12px !important;
+        padding: 16px 8px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        line-height: 1.3 !important;
+        min-height: 85px !important;
+        height: 85px !important;
+        transition: all 0.3s ease !important;
+        white-space: pre-line !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 4px !important;
     }
     
-    .stButton > button:hover {
-        background: linear-gradient(135deg, #5A8F00 0%, #76B900 100%);
-        box-shadow: 0 4px 12px rgba(118, 185, 0, 0.4);
-        transform: translateY(-1px);
+    .stButton > button:hover:not(:disabled) {
+        transform: translateY(-2px) !important;
     }
     
     /* Secondary Buttons */
@@ -394,36 +431,154 @@ def initialize_session_state():
 
 
 def render_progress_stepper():
-    """Render workflow progress stepper"""
+    """Render workflow progress stepper with clickable stages"""
     session = st.session_state.workflow_session
     
     stages = [
-        ("1️⃣ Target", WorkflowStage.TARGET_INPUT),
-        ("2️⃣ Predict", WorkflowStage.TARGET_PREDICTION),
-        ("3️⃣ Binder", WorkflowStage.BINDER_DESIGN),
-        ("4️⃣ Predict", WorkflowStage.BINDER_PREDICTION),
-        ("5️⃣ Analyze", WorkflowStage.COMPLEX_ANALYSIS),
-        ("6️⃣ Results", WorkflowStage.RESULTS)
+        ("Target Input", WorkflowStage.TARGET_INPUT),
+        ("Target Structure", WorkflowStage.TARGET_PREDICTION),
+        ("Binder Scaffold", WorkflowStage.BINDER_SCAFFOLD_DESIGN),
+        ("Sequence Design", WorkflowStage.BINDER_SEQUENCE_DESIGN),
+        ("Complex Prediction", WorkflowStage.COMPLEX_PREDICTION),
+        ("Results", WorkflowStage.RESULTS)
     ]
     
     st.markdown("### 🔬 Workflow Progress")
     
+    # Custom CSS for stage-specific button styling
+    stage_styles = """
+    <style>
+    /* Normalize button container spacing */
+    div[data-testid="column"] > div > div[data-testid="stVerticalBlock"] > div {
+        gap: 0 !important;
+    }
+    
+    /* Remove form padding for clickable buttons */
+    div[data-testid="column"] form {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    /* Base styling for all stage buttons */
+    div[data-testid="column"] button {
+        border-radius: 12px !important;
+        padding: 12px 6px !important;
+        font-weight: 600 !important;
+        font-size: 12px !important;
+        line-height: 1.3 !important;
+        min-height: 95px !important;
+        height: 95px !important;
+        max-height: 95px !important;
+        width: 100% !important;
+        margin: 0 !important;
+        transition: all 0.3s ease !important;
+        white-space: normal !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        word-wrap: break-word !important;
+        hyphens: auto !important;
+    }
+    
+    /* Completed stages - NVIDIA Green */
+    button[kind="secondary"]:not(:disabled) {
+        background: linear-gradient(135deg, #76B900 0%, #5A8F00 100%) !important;
+        color: white !important;
+        border: 2px solid #76B900 !important;
+        box-shadow: 0 4px 8px rgba(118, 185, 0, 0.3) !important;
+    }
+    button[kind="secondary"]:not(:disabled):hover {
+        background: linear-gradient(135deg, #5A8F00 0%, #76B900 100%) !important;
+        box-shadow: 0 6px 12px rgba(118, 185, 0, 0.5) !important;
+        transform: translateY(-2px) !important;
+    }
+    
+    /* In-progress stages - NVIDIA Green (lighter shade) */
+    button[kind="primary"]:disabled {
+        background: linear-gradient(135deg, #8CC63F 0%, #76B900 100%) !important;
+        color: white !important;
+        border: 2px solid #8CC63F !important;
+        box-shadow: 0 4px 8px rgba(140, 198, 63, 0.4) !important;
+        opacity: 1 !important;
+        animation: pulse-green 2s ease-in-out infinite !important;
+    }
+    
+    @keyframes pulse-green {
+        0%, 100% { 
+            box-shadow: 0 4px 8px rgba(140, 198, 63, 0.4) !important;
+        }
+        50% { 
+            box-shadow: 0 6px 16px rgba(118, 185, 0, 0.6) !important;
+        }
+    }
+    
+    /* Pending stages - Gray */
+    button[kind="secondary"]:disabled {
+        background: linear-gradient(135deg, #E5E5E5 0%, #CCCCCC 100%) !important;
+        color: #666666 !important;
+        border: 2px solid #E5E5E5 !important;
+        opacity: 0.7 !important;
+        box-shadow: none !important;
+    }
+    </style>
+    """
+    st.markdown(stage_styles, unsafe_allow_html=True)
+    
+    # Use columns with custom styled buttons
     cols = st.columns(len(stages))
     
     for idx, (col, (label, stage)) in enumerate(zip(cols, stages)):
         with col:
             status = session.stage_statuses.get(stage.value, "not_started")
             
+            # Determine icon and button type
+            # Priority: COMPLETED status takes precedence over current stage
             if status == StageStatus.COMPLETED.value:
-                st.markdown(f'<p class="stage-complete">✅ {label}</p>', unsafe_allow_html=True)
+                icon = "✅"
+                clickable = True
+                button_type = "secondary"
             elif status == StageStatus.IN_PROGRESS.value:
-                st.markdown(f'<p class="stage-active">🔄 {label}</p>', unsafe_allow_html=True)
+                icon = "🔄"
+                clickable = False
+                button_type = "primary"
             elif status == StageStatus.FAILED.value:
-                st.markdown(f'<p style="color: #dc3545; font-weight: bold;">❌ {label}</p>', unsafe_allow_html=True)
+                icon = "❌"
+                clickable = False
+                button_type = "secondary"
             else:
-                st.markdown(f'<p class="stage-pending">⭕ {label}</p>', unsafe_allow_html=True)
+                icon = "⭕"
+                clickable = False
+                button_type = "secondary"
+            
+            # Create button with icon / label format
+            button_label = f"{icon} {label}"
+            
+            if clickable:
+                # Clickable button for completed stages
+                if st.button(
+                    button_label,
+                    key=f"nav_{stage.value}",
+                    use_container_width=True,
+                    type=button_type,
+                    help="Click to view this stage"
+                ):
+                    session.advance_to_stage(stage)
+                    st.rerun()
+            else:
+                # Non-clickable display for other stages
+                st.button(
+                    button_label,
+                    key=f"display_{stage.value}",
+                    use_container_width=True,
+                    disabled=True,
+                    type=button_type
+                )
     
     st.progress(calculate_overall_progress(session))
+
 
 
 def calculate_overall_progress(session: WorkflowSession) -> float:
@@ -441,8 +596,6 @@ def render_sidebar():
         st.sidebar.image("image/nvidia.jpg", use_container_width=True)
     except:
         st.sidebar.markdown("# NVIDIA")
-    
-    st.sidebar.title("🧬 Binding Workflow")
     st.sidebar.markdown("---")
     
     session = st.session_state.workflow_session
@@ -475,14 +628,25 @@ def render_sidebar():
     st.session_state.demo_mode = demo_mode
     
     if not demo_mode:
+        # Get API key from environment variables (loaded from .env)
+        default_api_key = os.getenv("NGC_CLI_API_KEY") or os.getenv("NVIDIA_API_KEY") or ""
+        
         api_key = st.sidebar.text_input(
             "NVIDIA API Key",
             type="password",
-            value=st.session_state.api_key or "",
-            help="Get your API key from NVIDIA NGC"
+            value=st.session_state.api_key or default_api_key,
+            help="Get your API key from https://build.nvidia.com/"
         )
         if api_key:
             st.session_state.api_key = api_key
+        
+        # If no API key set yet, use default from env
+        if not st.session_state.api_key:
+            st.session_state.api_key = default_api_key
+            
+        # Show warning if no API key is configured
+        if not st.session_state.api_key:
+            st.sidebar.warning("⚠️ No API key configured. Please add NVIDIA_API_KEY to your .env file or enter it above.")
     
     st.sidebar.markdown("---")
     
@@ -556,13 +720,296 @@ def load_session():
             st.sidebar.error(f"❌ Load failed: {str(e)}")
 
 
+def load_pipeline_results(session: WorkflowSession, folder_path: str) -> bool:
+    """
+    Load pipeline results from an existing output folder.
+    
+    Args:
+        session: WorkflowSession to populate
+        folder_path: Path to output folder (e.g., 5tpn_AF2_output)
+    
+    Returns:
+        True if loading succeeded, False otherwise
+    """
+    import os
+    import glob
+    
+    try:
+        # Check if folder exists
+        if not os.path.exists(folder_path):
+            st.error(f"Folder not found: {folder_path}")
+            return False
+        
+        # Extract project name from folder
+        folder_name = os.path.basename(folder_path.rstrip('/'))
+        if '_AF2_output' in folder_name:
+            project_name = folder_name.replace('_AF2_output', '')
+            model_used = 'AlphaFold2'
+        elif '_OF3_output' in folder_name:
+            project_name = folder_name.replace('_OF3_output', '')
+            model_used = 'OpenFold3'
+        else:
+            # Try to infer from files
+            project_name = folder_name.replace('_output', '')
+            model_used = 'Unknown'
+        
+        # Load target structure (Step 1)
+        target_pdb = os.path.join(folder_path, f"{project_name}_first_structure.pdb")
+        if os.path.exists(target_pdb):
+            with open(target_pdb, 'r') as f:
+                session.target.pdb_content = f.read()
+            session.target.structure_predicted = True
+            session.target.structure_file_path = target_pdb
+            session.target.prediction_model = model_used
+            
+            # Extract sequence from PDB
+            from workflow.binding_analysis import parse_pdb_content
+            atoms = parse_pdb_content(session.target.pdb_content)
+            if atoms:
+                # Get unique residues
+                residues = {}
+                for atom in atoms:
+                    chain = atom.chain
+                    res_num = atom.residue_number
+                    res_name = atom.residue_name
+                    key = (chain, res_num)
+                    if key not in residues:
+                        residues[key] = res_name
+                
+                # Convert 3-letter codes to 1-letter
+                aa_map = {
+                    'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E',
+                    'PHE': 'F', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+                    'LYS': 'K', 'LEU': 'L', 'MET': 'M', 'ASN': 'N',
+                    'PRO': 'P', 'GLN': 'Q', 'ARG': 'R', 'SER': 'S',
+                    'THR': 'T', 'VAL': 'V', 'TRP': 'W', 'TYR': 'Y'
+                }
+                sorted_residues = sorted(residues.items(), key=lambda x: x[0][1])
+                sequence = ''.join([aa_map.get(res[1], 'X') for res in sorted_residues])
+                session.target.sequence = sequence
+            
+            session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.COMPLETED)
+        
+        # Load binder scaffold (Step 2)
+        scaffold_pdb = os.path.join(folder_path, f"{project_name}_RFD_prediction.pdb")
+        if os.path.exists(scaffold_pdb):
+            with open(scaffold_pdb, 'r') as f:
+                session.binder.scaffold_pdb = f.read()
+            session.binder.scaffold_file_path = scaffold_pdb
+            session.update_stage_status(WorkflowStage.BINDER_SCAFFOLD_DESIGN, StageStatus.COMPLETED)
+        
+        # Load MPNN sequences (Step 3)
+        mpnn_fasta = os.path.join(folder_path, f"{project_name}_Protein_MPNN_prediction.fa")
+        if os.path.exists(mpnn_fasta):
+            with open(mpnn_fasta, 'r') as f:
+                fasta_content = f.read()
+            session.binder.mpnn_fasta_content = fasta_content
+            
+            # Parse sequences
+            sequences = []
+            scores = []
+            current_seq = None
+            current_score = None
+            
+            for line in fasta_content.split('\n'):
+                line = line.strip()
+                if line.startswith('>'):
+                    # Save previous sequence if exists
+                    if current_seq and current_score:
+                        sequences.append(current_seq)
+                        scores.append(float(current_score))
+                    # Parse header: >seq_1, score=2.5862, global_score=2.5862
+                    if 'score=' in line:
+                        score_part = line.split('score=')[1].split(',')[0]
+                        current_score = score_part
+                    current_seq = ""
+                elif line:
+                    current_seq = line
+            
+            # Add last sequence
+            if current_seq and current_score:
+                sequences.append(current_seq)
+                scores.append(float(current_score))
+            
+            session.binder.mpnn_sequences = sequences
+            session.binder.mpnn_scores = scores
+            session.update_stage_status(WorkflowStage.BINDER_SEQUENCE_DESIGN, StageStatus.COMPLETED)
+        
+        # Load complex structure (Step 4)
+        complex_pdb = os.path.join(folder_path, f"{project_name}_pdb_1_MULTIMER.pdb")
+        if os.path.exists(complex_pdb):
+            with open(complex_pdb, 'r') as f:
+                session.complex.complex_pdb = f.read()
+            session.update_stage_status(WorkflowStage.COMPLEX_PREDICTION, StageStatus.COMPLETED)
+        
+        # Load pLDDT scores (Step 5)
+        plddt_file = os.path.join(folder_path, "pLDDT_scores.txt")
+        if os.path.exists(plddt_file):
+            with open(plddt_file, 'r') as f:
+                content = f.read().strip()
+                try:
+                    session.complex.plddt_score = float(content)
+                except ValueError:
+                    # File might contain filename and score: "filename.pdb  score"
+                    parts = content.split()
+                    for part in parts:
+                        try:
+                            session.complex.plddt_score = float(part.strip())
+                            break
+                        except ValueError:
+                            continue
+        
+        # Update project name
+        session.project_name = project_name
+        
+        # Mark TARGET_INPUT as completed since we loaded a project
+        session.update_stage_status(WorkflowStage.TARGET_INPUT, StageStatus.COMPLETED)
+        
+        # If we have complex, analyze the binding interface
+        if session.complex.complex_pdb and session.target.pdb_content:
+            try:
+                # Parse structures
+                target_atoms = parse_pdb_content(session.target.pdb_content)
+                binder_pdb = session.binder.scaffold_pdb or session.binder.pdb_content
+                
+                if binder_pdb:
+                    binder_atoms = parse_pdb_content(binder_pdb)
+                    
+                    # Find interface residues
+                    target_interface = find_interface_residues(target_atoms, binder_atoms)
+                    binder_interface = find_interface_residues(binder_atoms, target_atoms)
+                    
+                    # Assess binding quality
+                    quality = assess_binding_quality(
+                        target_atoms, binder_atoms,
+                        target_interface, binder_interface
+                    )
+                    
+                    # Update session with analysis
+                    session.complex.target_interface_residues = target_interface
+                    session.complex.binder_interface_residues = binder_interface
+                    session.complex.num_contacts = quality['num_contacts']
+                    session.complex.avg_distance = quality['avg_distance']
+                    session.complex.min_distance = quality['min_distance']
+                    session.complex.quality_score = quality['score']
+                    session.complex.quality_grade = quality['grade']
+                    session.complex.feedback = quality['feedback']
+            except Exception as e:
+                st.warning(f"⚠️ Could not analyze binding interface: {str(e)}")
+        
+        # Mark RESULTS as completed if we have a complex structure (regardless of analysis)
+        if session.complex.complex_pdb:
+            session.update_stage_status(WorkflowStage.RESULTS, StageStatus.COMPLETED)
+        
+        # Advance to appropriate stage based on what was loaded
+        if session.complex.complex_pdb:
+            session.advance_to_stage(WorkflowStage.RESULTS)
+        elif session.binder.mpnn_sequences:
+            session.advance_to_stage(WorkflowStage.COMPLEX_PREDICTION)
+        elif session.binder.scaffold_pdb:
+            session.advance_to_stage(WorkflowStage.BINDER_SEQUENCE_DESIGN)
+        elif session.target.structure_predicted:
+            session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error loading pipeline results: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return False
+
+
 def render_target_input_stage():
     """Stage 1: Target Protein Input"""
     st.header("1️⃣ Target Protein Input")
-    st.markdown("Define the protein you want to design a binder for")
     
     session = st.session_state.workflow_session
     target = session.target
+    
+    # Project mode selection
+    st.subheader("📁 Project Mode")
+    project_mode = st.radio(
+        "Choose how to start",
+        ["🆕 Create New Project", "📂 Load Previous Results"],
+        horizontal=True,
+        key="project_mode"
+    )
+    
+    if project_mode == "📂 Load Previous Results":
+        st.markdown("---")
+        st.markdown("### Load from existing pipeline output")
+        
+        # Scan for available output folders
+        import glob
+        workflow_outputs = glob.glob("workflow/*_output")
+        root_outputs = glob.glob("*_output")
+        all_outputs = workflow_outputs + root_outputs
+        
+        if all_outputs:
+            # Create display names with metadata
+            output_options = {}
+            for folder in all_outputs:
+                folder_name = os.path.basename(folder)
+                if '_AF2_output' in folder_name:
+                    project = folder_name.replace('_AF2_output', '')
+                    display = f"🤖 {project} (AlphaFold2)"
+                elif '_OF3_output' in folder_name:
+                    project = folder_name.replace('_OF3_output', '')
+                    display = f"🧬 {project} (OpenFold3)"
+                else:
+                    project = folder_name.replace('_output', '')
+                    display = f"📦 {project}"
+                output_options[display] = folder
+            
+            selected_display = st.selectbox(
+                "Select Previous Project",
+                options=list(output_options.keys()),
+                help="Choose from available pipeline output folders"
+            )
+            
+            selected_folder = output_options[selected_display]
+            
+            # Show folder details
+            col1, col2 = st.columns(2)
+            with col1:
+                st.info(f"📂 Folder: `{selected_folder}`")
+            with col2:
+                # Check what stages are available
+                folder_name = os.path.basename(selected_folder)
+                project = folder_name.replace('_AF2_output', '').replace('_OF3_output', '').replace('_output', '')
+                has_target = os.path.exists(os.path.join(selected_folder, f"{project}_first_structure.pdb"))
+                has_scaffold = os.path.exists(os.path.join(selected_folder, f"{project}_RFD_prediction.pdb"))
+                has_sequences = os.path.exists(os.path.join(selected_folder, f"{project}_Protein_MPNN_prediction.fa"))
+                has_complex = os.path.exists(os.path.join(selected_folder, f"{project}_pdb_1_MULTIMER.pdb"))
+                
+                stages_text = []
+                if has_target: stages_text.append("Target")
+                if has_scaffold: stages_text.append("Scaffold")
+                if has_sequences: stages_text.append("Sequences")
+                if has_complex: stages_text.append("Complex")
+                
+                st.success(f"✅ Stages: {', '.join(stages_text)}")
+            
+            if st.button("🔄 Load This Project", type="primary", use_container_width=True):
+                with st.spinner("Loading pipeline results..."):
+                    load_success = load_pipeline_results(session, selected_folder)
+                    if load_success:
+                        st.success("✅ Successfully loaded pipeline results!")
+                        st.balloons()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to load results. Check folder structure.")
+        else:
+            st.warning("⚠️ No previous pipeline output folders found in workspace")
+            st.info("Create a new project to get started!")
+        
+        return  # Exit early when in load mode
+    
+    # Create New Project mode
+    st.markdown("---")
+    st.markdown("### Define the protein you want to design a binder for")
     
     # Input type selection
     col1, col2 = st.columns([2, 1])
@@ -783,88 +1230,447 @@ def render_target_prediction_stage():
     with col2:
         if st.button("Next: Design Binder →", type="primary", use_container_width=True):
             if target.pdb_content:
-                session.advance_to_stage(WorkflowStage.BINDER_DESIGN)
+                session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
                 st.rerun()
             else:
                 st.error("❌ Please predict target structure first")
 
 
 def render_binder_design_stage():
-    """Stage 3: Binder Design"""
-    st.header("3️⃣ Binder Design")
-    st.markdown("Design or input the binding protein sequence")
+    """DEPRECATED - Replaced by render_binder_scaffold_stage"""
+    render_binder_scaffold_stage()
+
+
+def render_binder_scaffold_stage():
+    """Stage 3: Binder Scaffold Design (RFDiffusion)"""
+    st.header("3️⃣ Binder Scaffold Design")
+    st.markdown("Generate a binder scaffold using **RFDiffusion** AI")
     
     session = st.session_state.workflow_session
     binder = session.binder
     
-    # Design method selection
-    design_method = st.radio(
-        "Design Method",
-        ["Manual Sequence", "RFDiffusion (Coming Soon)", "Template-based (Coming Soon)"],
-        horizontal=True
-    )
-    
-    binder.design_method = design_method.lower().split()[0]
-    
-    if design_method == "Manual Sequence":
-        st.subheader("Enter Binder Sequence")
-        
-        # Sequence length guidance
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            sequence = st.text_area(
-                "Binder Sequence",
-                value=binder.sequence or "",
-                placeholder="Enter designed binder sequence (50-150 residues recommended)",
-                height=150
+    # Initialize pipeline only when needed (lazy loading)
+    def get_pipeline():
+        if 'pipeline' not in st.session_state:
+            st.session_state.pipeline = GenerativePipeline(
+                session=session,
+                api_key=st.session_state.api_key,
+                output_dir=Path(f"{session.project_name}_output")
             )
+        return st.session_state.pipeline
+    
+    # Show target summary
+    st.subheader("Target Protein")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Length", f"{len(session.target.sequence)} AA")
+    with col2:
+        st.metric("Model Used", session.target.model_used or "N/A")
+    with col3:
+        st.metric("Structure", "✅ Available" if session.target.pdb_content else "❌ Missing")
+    
+    # RFDiffusion parameters
+    st.subheader("RFDiffusion Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        contigs = st.text_input(
+            "Contigs Specification",
+            value=binder.rfdiffusion_params.get("contigs", "A1-25/0 70-100"),
+            help="Format: A1-25/0 70-100 means keep residues 1-25 from target, add 70-100 new residues for binder"
+        )
+        
+        diffusion_steps = st.slider(
+            "Diffusion Steps",
+            min_value=5,
+            max_value=50,
+            value=15,
+            help="More steps = better quality but slower"
+        )
+    
+    with col2:
+        hotspot_input = st.text_input(
+            "Binding Hotspot Residues (optional)",
+            value=", ".join(binder.rfdiffusion_params.get("hotspot_res", [])) if binder.rfdiffusion_params.get("hotspot_res") else "",
+            placeholder="e.g., A14, A15, A17, A18",
+            help="Specify target residues that must be in the binding interface"
+        )
+        
+        hotspots = [h.strip() for h in hotspot_input.split(",") if h.strip()] if hotspot_input else None
+    
+    # Check if stage is completed (view-only mode)
+    stage_status = session.stage_statuses.get(WorkflowStage.BINDER_SCAFFOLD_DESIGN.value)
+    is_completed = stage_status == StageStatus.COMPLETED.value
+    
+    # Display existing scaffold if available
+    if binder.scaffold_pdb:
+        st.success("✅ Binder scaffold already generated!")
+        
+        with st.expander("View Scaffold Structure", expanded=True):
+            viz_html = create_3d_visualization(binder.scaffold_pdb)
+            st.components.v1.html(viz_html, height=600, scrolling=False)
+        
+        if is_completed:
+            st.info("💡 This stage is completed. Use the navigation buttons below to proceed or click 'Regenerate' to create a new scaffold.")
+    
+    # Generate/Regenerate button - only show if not in view-only mode OR explicitly want to regenerate
+    if not is_completed:
+        col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            st.markdown("**💡 Design Tips:**")
-            st.markdown("- Typical binder: 50-150 AA")
-            st.markdown("- Include diverse residues")
-            st.markdown("- Consider hydrophobic core")
-            st.markdown("- Plan interface residues")
-        
-        if sequence:
-            is_valid, result = validate_protein_sequence(sequence)
-            if is_valid:
-                binder.sequence = result
-                st.success(f"✅ Valid binder sequence: {len(result)} amino acids")
+            if st.button("🚀 Generate Binder Scaffold", type="primary", use_container_width=True):
+                pipeline = get_pipeline()
                 
-                # Sequence analysis
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Length", len(result))
-                with col2:
-                    hydrophobic = sum(1 for aa in result if aa in 'AILMFVPW')
-                    st.metric("Hydrophobic %", f"{hydrophobic/len(result)*100:.1f}%")
-                with col3:
-                    charged = sum(1 for aa in result if aa in 'DEKR')
-                    st.metric("Charged %", f"{charged/len(result)*100:.1f}%")
-            else:
-                st.error(f"❌ {result}")
-    
+                # Show debug info
+                st.info("🔍 **Debug**: Running RFDiffusion... Check your terminal for detailed logs!")
+                
+                with st.spinner("🧬 Running RFDiffusion... This may take a few minutes..."):
+                    success, msg = pipeline.run_scaffold_design(
+                        contigs=contigs,
+                        hotspot_res=hotspots,
+                        diffusion_steps=diffusion_steps
+                    )
+                    
+                    if success:
+                        st.success(f"✅ {msg}")
+                        st.balloons()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
     else:
-        st.info("🚧 This feature is coming soon! Use Manual Sequence for now.")
+        # Show regenerate option for completed stage
+        with st.expander("♻️ Regenerate with Different Parameters"):
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("♻️ Regenerate Scaffold", type="secondary", use_container_width=True):
+                    # Reset status and allow regeneration
+                    session.update_stage_status(WorkflowStage.BINDER_SCAFFOLD_DESIGN, StageStatus.IN_PROGRESS)
+                    st.rerun()
     
     # Navigation
+    st.markdown("---")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back", use_container_width=True):
+        if st.button("← Back to Target", use_container_width=True):
             session.advance_to_stage(WorkflowStage.TARGET_PREDICTION)
             st.rerun()
     
+    with col3:
+        if st.button("Next: Sequence Design →", type="primary", use_container_width=True, disabled=not binder.scaffold_pdb):
+            session.advance_to_stage(WorkflowStage.BINDER_SEQUENCE_DESIGN)
+            st.rerun()
+
+
+def render_binder_sequence_stage():
+    """Stage 4: Sequence Design (ProteinMPNN)"""
+    st.header("4️⃣ Sequence Design")
+    st.markdown("Design amino acid sequences using **ProteinMPNN**")
+    
+    session = st.session_state.workflow_session
+    binder = session.binder
+    
+    # Check if stage is completed (view-only mode)
+    stage_status = session.stage_statuses.get(WorkflowStage.BINDER_SEQUENCE_DESIGN.value)
+    is_completed = stage_status == StageStatus.COMPLETED.value
+    
+    # Get pipeline (lazy loading)
+    def get_pipeline():
+        if 'pipeline' not in st.session_state:
+            st.session_state.pipeline = GenerativePipeline(
+                session=session,
+                api_key=st.session_state.api_key,
+                output_dir=Path(f"{session.project_name}_output")
+            )
+        return st.session_state.pipeline
+    
+    # Show scaffold summary
+    st.subheader("Binder Scaffold")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Scaffold", "✅ Available")
     with col2:
-        if st.button("Next: Predict Binder →", type="primary", use_container_width=True):
-            if binder.sequence:
-                session.advance_to_stage(WorkflowStage.BINDER_PREDICTION)
-                session.update_stage_status(WorkflowStage.BINDER_DESIGN, StageStatus.COMPLETED)
-                st.rerun()
+        st.metric("Design Method", "RFDiffusion")
+    with col3:
+        num_existing = len(binder.mpnn_sequences)
+        st.metric("Sequences", f"{num_existing} designed" if num_existing > 0 else "Not generated")
+    
+    # ProteinMPNN parameters
+    st.subheader("ProteinMPNN Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        num_sequences = st.slider(
+            "Number of Sequences",
+            min_value=1,
+            max_value=20,
+            value=10,
+            help="How many sequence variants to generate"
+        )
+    
+    with col2:
+        sampling_temp = st.slider(
+            "Sampling Temperature",
+            min_value=0.01,
+            max_value=0.5,
+            value=0.1,
+            step=0.01,
+            help="Lower = more conservative, Higher = more diverse"
+        )
+    
+    # Display existing sequences
+    if binder.mpnn_sequences:
+        st.success(f"✅ {len(binder.mpnn_sequences)} sequences generated!")
+        
+        with st.expander("📋 View Designed Sequences", expanded=True):
+            for i, seq in enumerate(binder.mpnn_sequences):
+                score = binder.mpnn_scores[i] if i < len(binder.mpnn_scores) else None
+                selected = "🟢" if i == binder.selected_sequence_idx else "⚪"
+                
+                col1, col2, col3 = st.columns([1, 8, 2])
+                with col1:
+                    st.markdown(f"**{selected} #{i+1}**")
+                with col2:
+                    st.code(seq[:80] + "..." if len(seq) > 80 else seq, language="text")
+                with col3:
+                    if score:
+                        st.metric("Score", f"{score:.3f}")
+                    if st.button(f"Select", key=f"select_{i}"):
+                        binder.selected_sequence_idx = i
+                        binder.sequence = seq
+                        st.success(f"Selected sequence #{i+1}")
+                        st.rerun()
+        
+        if is_completed:
+            st.info("💡 This stage is completed. Use the navigation buttons below to proceed or click 'Regenerate' to design new sequences.")
+        else:
+            st.info(f"💡 Currently selected: Sequence #{binder.selected_sequence_idx + 1}")
+    
+    # Generate/Regenerate button
+    if not is_completed:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            if st.button("🚀 Design Sequences", type="primary", use_container_width=True):
+                pipeline = get_pipeline()
+                
+                # Show debug info
+                st.info("🔍 **Debug**: Running ProteinMPNN... Check your terminal for detailed logs!")
+                
+                with st.spinner("🧬 Running ProteinMPNN... Designing sequences..."):
+                    success, msg = pipeline.run_sequence_design(
+                        num_sequences=num_sequences,
+                        sampling_temp=sampling_temp
+                    )
+                    
+                    if success:
+                        st.success(f"✅ {msg}")
+                        st.balloons()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+    else:
+        # Show regenerate option for completed stage
+        with st.expander("♻️ Regenerate with Different Parameters"):
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("♻️ Regenerate Sequences", type="secondary", use_container_width=True):
+                    # Reset status and allow regeneration
+                    session.update_stage_status(WorkflowStage.BINDER_SEQUENCE_DESIGN, StageStatus.IN_PROGRESS)
+                    st.rerun()
+    
+    # Navigation
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("← Back to Scaffold", use_container_width=True):
+            session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
+            st.rerun()
+    
+    with col3:
+        if st.button("Next: Predict Complex →", type="primary", use_container_width=True, disabled=not binder.mpnn_sequences):
+            session.advance_to_stage(WorkflowStage.COMPLEX_PREDICTION)
+            st.rerun()
+
+
+def render_binder_prediction_stage():
+    """DEPRECATED - Replaced by render_complex_prediction_stage"""
+    render_complex_prediction_stage()
+
+
+def render_complex_prediction_stage():
+    """Stage 5: Complex Prediction (AlphaFold-Multimer)"""
+    st.header("5️⃣ Complex Prediction")
+    st.markdown("Predict binder-target complex using **AlphaFold-Multimer**")
+    
+    session = st.session_state.workflow_session
+    binder = session.binder
+    complex_data = session.complex
+    
+    # Check if stage is completed (view-only mode)
+    stage_status = session.stage_statuses.get(WorkflowStage.COMPLEX_PREDICTION.value)
+    is_completed = stage_status == StageStatus.COMPLETED.value
+    
+    # Get pipeline (lazy loading)
+    def get_pipeline():
+        if 'pipeline' not in st.session_state:
+            st.session_state.pipeline = GenerativePipeline(
+                session=session,
+                api_key=st.session_state.api_key,
+                output_dir=Path(f"{session.project_name}_output")
+            )
+        return st.session_state.pipeline
+    
+    # Show summary
+    st.subheader("Complex Components")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        target_seq = session.target.sequence or ""
+        st.metric("Target", f"{len(target_seq)} AA")
+    with col2:
+        # Get binder sequence from either sequence field or mpnn_sequences
+        binder_seq = binder.sequence or (binder.mpnn_sequences[binder.selected_sequence_idx] if binder.mpnn_sequences else "")
+        st.metric("Binder", f"{len(binder_seq)} AA")
+    with col3:
+        st.metric("Selected Seq", f"#{binder.selected_sequence_idx + 1}")
+    with col4:
+        st.metric("Complex", "✅ Predicted" if complex_data.complex_pdb else "Not predicted")
+    
+    # AlphaFold-Multimer parameters
+    st.subheader("AlphaFold-Multimer Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        num_candidates = st.slider(
+            "Number of Candidates to Evaluate",
+            min_value=1,
+            max_value=min(10, len(binder.mpnn_sequences)),
+            value=min(3, len(binder.mpnn_sequences)),
+            help="Predict complexes for top N designed sequences"
+        )
+    
+    with col2:
+        selected_models = st.multiselect(
+            "AlphaFold Models",
+            options=[1, 2, 3, 4, 5],
+            default=[1],
+            help="Which AF-Multimer models to use (more = slower but more accurate)"
+        )
+    
+    # Display existing complex
+    if complex_data.complex_pdb:
+        st.success(f"✅ Complex predicted! pLDDT Score: {complex_data.plddt_score:.2f}")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            with st.expander("🧬 View Complex Structure", expanded=True):
+                viz_html = create_3d_visualization(complex_data.complex_pdb)
+                st.components.v1.html(viz_html, height=600, scrolling=False)
+        
+        with col2:
+            st.metric("pLDDT Score", f"{complex_data.plddt_score:.2f}")
+            st.metric("Quality Grade", complex_data.quality_grade)
+            st.metric("Method", complex_data.docking_method)
+            
+            if complex_data.plddt_score > 90:
+                st.success("🎉 Excellent confidence!")
+            elif complex_data.plddt_score > 70:
+                st.info("👍 Good confidence")
             else:
-                st.error("❌ Please enter a binder sequence")
+                st.warning("⚠️ Low confidence")
+        
+        # Show rankings if multiple candidates
+        if complex_data.candidate_rankings:
+            with st.expander(f"📊 View All {len(complex_data.candidate_rankings)} Candidates"):
+                for i, candidate in enumerate(complex_data.candidate_rankings):
+                    col1, col2, col3, col4 = st.columns([1, 6, 2, 2])
+                    with col1:
+                        st.markdown(f"**#{i+1}**")
+                    with col2:
+                        st.code(candidate['sequence'][:60] + "...", language="text")
+                    with col3:
+                        st.metric("pLDDT", f"{candidate['plddt_score']:.2f}")
+                    with col4:
+                        st.markdown(f"*{candidate['quality_grade']}*")
+        
+        if is_completed:
+            st.info("💡 This stage is completed. Use the navigation buttons below to proceed or click 'Regenerate' to create a new prediction.")
+    
+    # Predict button
+    if not is_completed:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            if num_candidates > 1:
+                button_label = f"🚀 Predict {num_candidates} Complexes"
+            else:
+                button_label = "🚀 Predict Complex"
+            
+            if st.button(button_label, type="primary", use_container_width=True):
+                pipeline = get_pipeline()
+                
+                # Show debug info
+                st.info(f"🔍 **Debug**: Running AlphaFold-Multimer for {num_candidates} candidate(s)... Check your terminal for detailed logs!")
+                
+                with st.spinner(f"🧬 Running AlphaFold-Multimer for {num_candidates} candidate(s)... This will take several minutes..."):
+                    if num_candidates > 1:
+                        success, msg = pipeline.run_batch_complex_prediction(
+                            num_candidates=num_candidates,
+                            selected_models=selected_models
+                        )
+                    else:
+                        success, msg = pipeline.run_complex_prediction(
+                            sequence_idx=binder.selected_sequence_idx,
+                            selected_models=selected_models
+                        )
+                    
+                    if success:
+                        st.success(f"✅ {msg}")
+                        st.balloons()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {msg}")
+    else:
+        # Show regenerate option for completed stage
+        with st.expander("♻️ Regenerate with Different Parameters"):
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("♻️ Regenerate Complex", type="secondary", use_container_width=True):
+                    # Reset status and allow regeneration
+                    session.update_stage_status(WorkflowStage.COMPLEX_PREDICTION, StageStatus.IN_PROGRESS)
+                    st.rerun()
+    
+    # Navigation
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("← Back to Sequences", use_container_width=True):
+            session.advance_to_stage(WorkflowStage.BINDER_SEQUENCE_DESIGN)
+            st.rerun()
+    
+    with col3:
+        if st.button("View Results →", type="primary", use_container_width=True, disabled=not complex_data.complex_pdb):
+            session.advance_to_stage(WorkflowStage.RESULTS)
+            st.rerun()
+
+
+def render_complex_analysis_stage():
+    """DEPRECATED - Merged into render_complex_prediction_stage"""
+    render_complex_prediction_stage()
+
+
+def render_binder_design_stage():
+    """DEPRECATED - Replaced by render_binder_scaffold_stage"""
+    render_binder_scaffold_stage()
 
 
 def render_binder_prediction_stage():
@@ -1131,126 +1937,294 @@ def render_results_stage():
 
 
 def render_results_dashboard(session: WorkflowSession):
-    """Render complete results dashboard"""
+    """Render complete results dashboard - comprehensive summary of entire workflow"""
     target = session.target
     binder = session.binder
     complex_data = session.complex
     
-    # Overall summary
-    st.subheader("📋 Project Summary")
+    # Header with overall status
+    quality_score = complex_data.quality_score or 0
+    recommendation_color = (
+        "🟢" if quality_score >= 70 else
+        "🟡" if quality_score >= 50 else "🔴"
+    )
     
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, #76B900 0%, #00D4AA 100%); padding: 30px; border-radius: 15px; color: white; margin-bottom: 30px;">
+        <h1 style="margin: 0; font-size: 36px;">✅ Workflow Complete</h1>
+        <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">
+            Project: {session.project_name} | Status: {recommendation_color} Quality Score: {quality_score}/100
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # === SECTION 1: Project Overview ===
+    st.markdown("## 📋 Project Overview")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Session ID", session.session_id[:8])
+        st.caption(f"Created: {session.created_at[:10]}")
+    
+    with col2:
+        st.metric("Total Stages", "6")
+        completed_count = sum(1 for status in session.stage_statuses.values() if status == StageStatus.COMPLETED.value)
+        st.caption(f"Completed: {completed_count}/6")
+    
+    with col3:
+        st.metric("Overall Quality", f"{quality_score}/100")
+        st.caption(f"Grade: {complex_data.quality_grade or 'N/A'}")
+    
+    st.markdown("---")
+    
+    # === SECTION 2: Target Protein Summary ===
+    st.markdown("## 🎯 Target Protein Summary")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown(f"""
+        **Input Details:**
+        - **Input Type:** {target.input_type or 'N/A'}
+        - **Sequence Length:** {len(target.sequence) if target.sequence else 0} amino acids
+        - **Structure Prediction Model:** {target.model_used or 'Uploaded'}
+        - **Structure Confidence (pLDDT):** {f"{target.confidence_avg:.2f}" if target.confidence_avg else 'N/A'}
+        """)
+        
+        if target.sequence:
+            with st.expander("View Target Sequence"):
+                st.code(target.sequence, language=None)
+    
+    with col2:
+        st.markdown("**Status:**")
+        st.success("✅ Structure Ready")
+        if target.structure_file_path:
+            st.caption(f"File: {target.structure_file_path.split('/')[-1]}")
+    
+    st.markdown("---")
+    
+    # === SECTION 3: Binder Design Summary ===
+    st.markdown("## 🧬 Binder Design Summary")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        binder_seq = binder.sequence or (binder.mpnn_sequences[binder.selected_sequence_idx] if binder.mpnn_sequences else None)
+        
+        st.markdown(f"""
+        **Design Details:**
+        - **Scaffold Generation:** RFDiffusion
+        - **Sequence Design:** ProteinMPNN
+        - **Selected Sequence:** #{binder.selected_sequence_idx + 1 if binder.mpnn_sequences else 'N/A'}
+        - **Sequence Length:** {len(binder_seq) if binder_seq else 0} amino acids
+        - **Total Sequences Generated:** {len(binder.mpnn_sequences) if binder.mpnn_sequences else 0}
+        """)
+        
+        if binder.mpnn_scores and binder.selected_sequence_idx < len(binder.mpnn_scores):
+            st.markdown(f"- **MPNN Score:** {binder.mpnn_scores[binder.selected_sequence_idx]:.3f}")
+        
+        if binder_seq:
+            with st.expander("View Binder Sequence"):
+                st.code(binder_seq, language=None)
+    
+    with col2:
+        st.markdown("**Status:**")
+        st.success("✅ Design Complete")
+        if binder.scaffold_file_path:
+            st.caption(f"Scaffold: {binder.scaffold_file_path.split('/')[-1]}")
+    
+    st.markdown("---")
+    
+    # === SECTION 4: Complex Analysis Summary ===
+    st.markdown("## 🔗 Complex Binding Analysis")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Quality Score", f"{quality_score}/100", delta=complex_data.quality_grade)
+    
+    with col2:
+        st.metric("Interface Contacts", complex_data.num_contacts or 0)
+    
+    with col3:
+        st.metric("Avg Distance", f"{complex_data.avg_distance or 0:.2f} Å")
+    
+    with col4:
+        st.metric("Min Distance", f"{complex_data.min_distance or 0:.2f} Å")
+    
+    # Assessment feedback
+    st.markdown("### 📊 Binding Assessment")
+    feedback = complex_data.feedback or ["No binding analysis available yet"]
+    for item in feedback:
+        if "Strong" in item or "Excellent" in item or "Good" in item:
+            st.success(f"✅ {item}")
+        elif "Weak" in item or "Poor" in item or "Warning" in item:
+            st.warning(f"⚠️ {item}")
+        else:
+            st.info(f"ℹ️ {item}")
+    
+    # Interface residues detail
+    with st.expander("🔬 View Interface Residues Detail"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Target Interface Residues:**")
+            target_interface = complex_data.interface_residues_target or []
+            if target_interface:
+                st.text(", ".join(map(str, target_interface)))
+                st.caption(f"Total: {len(target_interface)} residues")
+            else:
+                st.text("N/A")
+        
+        with col2:
+            st.markdown("**Binder Interface Residues:**")
+            binder_interface = complex_data.interface_residues_binder or []
+            if binder_interface:
+                st.text(", ".join(map(str, binder_interface)))
+                st.caption(f"Total: {len(binder_interface)} residues")
+            else:
+                st.text("N/A")
+    
+    st.markdown("---")
+    
+    # === SECTION 5: 3D Visualization ===
+    st.markdown("## 🔬 3D Structure Visualization")
+    
+    if complex_data.complex_pdb:
+        tab1, tab2, tab3 = st.tabs(["🔗 Complex", "🎯 Target", "🧬 Binder"])
+        
+        with tab1:
+            st.markdown("**Target-Binder Complex**")
+            try:
+                from frontend.app_v2 import render_protein_viewer
+                render_protein_viewer(complex_data.complex_pdb, key="results_complex_viewer")
+            except:
+                st.info("💡 3D visualization not available. Download the PDB file to view in external software.")
+        
+        with tab2:
+            st.markdown("**Target Protein Structure**")
+            if target.pdb_content:
+                try:
+                    from frontend.app_v2 import render_protein_viewer
+                    render_protein_viewer(target.pdb_content, key="results_target_viewer")
+                except:
+                    st.info("💡 Download PDB to view externally.")
+            else:
+                st.warning("Target structure not available")
+        
+        with tab3:
+            st.markdown("**Binder Protein Structure**")
+            binder_pdb = binder.pdb_content or binder.scaffold_pdb
+            if binder_pdb:
+                try:
+                    from frontend.app_v2 import render_protein_viewer
+                    render_protein_viewer(binder_pdb, key="results_binder_viewer")
+                except:
+                    st.info("💡 Download PDB to view externally.")
+            else:
+                st.warning("Binder structure not available")
+    else:
+        st.info("Complex structure not available for visualization")
+    
+    st.markdown("---")
+    
+    # === SECTION 6: Export & Download ===
+    st.markdown("## 📤 Export & Download Results")
+    
+    st.markdown("### Structure Files")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if target.pdb_content:
+            st.download_button(
+                "⬇️ Target PDB",
+                data=target.pdb_content.encode('utf-8') if isinstance(target.pdb_content, str) else target.pdb_content,
+                file_name=f"{session.project_name}_target.pdb",
+                mime="chemical/x-pdb",
+                use_container_width=True
+            )
+        else:
+            st.button("⬇️ Target PDB", disabled=True, use_container_width=True)
+    
+    with col2:
+        binder_pdb = binder.pdb_content or binder.scaffold_pdb
+        if binder_pdb:
+            st.download_button(
+                "⬇️ Binder PDB",
+                data=binder_pdb.encode('utf-8') if isinstance(binder_pdb, str) else binder_pdb,
+                file_name=f"{session.project_name}_binder.pdb",
+                mime="chemical/x-pdb",
+                use_container_width=True
+            )
+        else:
+            st.button("⬇️ Binder PDB", disabled=True, use_container_width=True)
+    
+    with col3:
+        if complex_data.complex_pdb:
+            st.download_button(
+                "⬇️ Complex PDB",
+                data=complex_data.complex_pdb.encode('utf-8') if isinstance(complex_data.complex_pdb, str) else complex_data.complex_pdb,
+                file_name=f"{session.project_name}_complex.pdb",
+                mime="chemical/x-pdb",
+                use_container_width=True
+            )
+        else:
+            st.button("⬇️ Complex PDB", disabled=True, use_container_width=True)
+    
+    st.markdown("### Sequence Files")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Target Protein:**")
-        st.markdown(f"- Length: {len(target.sequence)} AA")
-        st.markdown(f"- Model: {target.model_used or 'Uploaded'}")
-        st.markdown(f"- Input: {target.input_type}")
+        if binder.mpnn_fasta_content:
+            st.download_button(
+                "⬇️ All MPNN Sequences (FASTA)",
+                data=binder.mpnn_fasta_content,
+                file_name=f"{session.project_name}_sequences.fa",
+                mime="text/plain",
+                use_container_width=True
+            )
+        else:
+            st.button("⬇️ All MPNN Sequences", disabled=True, use_container_width=True)
     
     with col2:
-        st.markdown("**Binder Protein:**")
-        st.markdown(f"- Length: {len(binder.sequence)} AA")
-        st.markdown(f"- Model: {binder.model_used}")
-        st.markdown(f"- Design: {binder.design_method}")
-    
-    st.markdown("---")
-    
-    # Quality assessment
-    st.subheader("🎯 Binding Quality Assessment")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric(
-            "Overall Quality Score",
-            f"{complex_data.quality_score}/100",
-            delta=None
-        )
-    
-    with col2:
-        st.metric("Grade", complex_data.quality_grade)
-    
-    with col3:
-        recommendation_color = (
-            "🟢" if complex_data.quality_score >= 70 else
-            "🟡" if complex_data.quality_score >= 50 else "🔴"
-        )
-        st.markdown(f"**Status:** {recommendation_color}")
-    
-    # Detailed feedback
-    st.markdown("**Assessment:**")
-    for item in complex_data.feedback:
-        st.markdown(f"- {item}")
-    
-    st.markdown("---")
-    
-    # Interface details
-    st.subheader("🔗 Interface Details")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Interface Contacts", complex_data.num_contacts)
-    with col2:
-        st.metric("Average Distance", f"{complex_data.avg_distance:.2f} Å")
-    with col3:
-        st.metric("Minimum Distance", f"{complex_data.min_distance:.2f} Å")
-    
-    # Interface residues
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Target Interface Residues:**")
-        st.text(", ".join(map(str, complex_data.interface_residues_target[:20])))
-        if len(complex_data.interface_residues_target) > 20:
-            st.caption(f"... and {len(complex_data.interface_residues_target) - 20} more")
-    
-    with col2:
-        st.markdown("**Binder Interface Residues:**")
-        st.text(", ".join(map(str, complex_data.interface_residues_binder[:20])))
-        if len(complex_data.interface_residues_binder) > 20:
-            st.caption(f"... and {len(complex_data.interface_residues_binder) - 20} more")
-    
-    st.markdown("---")
-    
-    # Export all results
-    st.subheader("📤 Export Results")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.download_button(
-            "Download Target PDB",
-            data=target.pdb_content,
-            file_name=f"target_{session.session_id}.pdb",
-            mime="chemical/x-pdb"
-        )
-    
-    with col2:
-        st.download_button(
-            "Download Binder PDB",
-            data=binder.pdb_content,
-            file_name=f"binder_{session.session_id}.pdb",
-            mime="chemical/x-pdb"
-        )
-    
-    with col3:
-        st.download_button(
-            "Download Complex PDB",
-            data=complex_data.complex_pdb,
-            file_name=f"complex_{session.session_id}.pdb",
-            mime="chemical/x-pdb"
-        )
-    
-    # Full session export
-    if st.button("📦 Export Complete Project"):
         export_data = session.to_json()
         st.download_button(
-            "Download Project JSON",
+            "⬇️ Complete Project (JSON)",
             data=export_data,
-            file_name=f"{session.project_name}_{session.session_id}.json",
-            mime="application/json"
+            file_name=f"{session.project_name}_complete.json",
+            mime="application/json",
+            use_container_width=True,
+            type="primary"
         )
+    
+    st.markdown("---")
+    
+    # === SECTION 7: Next Steps ===
+    st.markdown("## 🚀 Next Steps")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **💡 Recommendations:**
+        - Validate binding experimentally (e.g., SPR, ITC)
+        - Optimize binder sequence for expression
+        - Test different MPNN sequences
+        - Refine complex with molecular dynamics
+        """)
+    
+    with col2:
+        st.markdown("""
+        **🔧 Actions:**
+        """)
+        if st.button("🔄 Design New Binder", use_container_width=True):
+            session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
+            st.rerun()
+        
+        if st.button("🆕 Start New Project", use_container_width=True):
+            st.session_state.workflow_session = WorkflowSession.create_new()
+            st.rerun()
 
 
 def main():
@@ -1263,7 +2237,7 @@ def main():
     # NVIDIA Branded Header
     st.markdown("""
     <div class="nvidia-header">
-        <h1>🧬 NVIDIA Protein Binding Design Workflow</h1>
+        <h1>🧬 Protein Binding Design Workflow</h1>
         <p>ESMFold → RFDiffusion → ProteinMPNN → DiffDock</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1281,12 +2255,12 @@ def main():
         render_target_input_stage()
     elif current_stage == WorkflowStage.TARGET_PREDICTION:
         render_target_prediction_stage()
-    elif current_stage == WorkflowStage.BINDER_DESIGN:
-        render_binder_design_stage()
-    elif current_stage == WorkflowStage.BINDER_PREDICTION:
-        render_binder_prediction_stage()
-    elif current_stage == WorkflowStage.COMPLEX_ANALYSIS:
-        render_complex_analysis_stage()
+    elif current_stage == WorkflowStage.BINDER_SCAFFOLD_DESIGN:
+        render_binder_scaffold_stage()
+    elif current_stage == WorkflowStage.BINDER_SEQUENCE_DESIGN:
+        render_binder_sequence_stage()
+    elif current_stage == WorkflowStage.COMPLEX_PREDICTION:
+        render_complex_prediction_stage()
     elif current_stage == WorkflowStage.RESULTS:
         render_results_stage()
     

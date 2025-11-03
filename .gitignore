@@ -26,10 +26,20 @@ venv/
 ENV/
 env/
 
-# Environment variables
+# Environment variables - NEVER COMMIT THESE!
 .env
 .env.local
 .env.*.local
+*.env
+.env.*
+
+# API Keys and Secrets - IMPORTANT: DO NOT COMMIT!
+**/secrets.toml
+*api_key*
+*API_KEY*
+*.pem
+*.key
+credentials.json
 
 # IDE
 .vscode/

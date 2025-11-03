@@ -14,10 +14,10 @@ from datetime import datetime
 class WorkflowStage(Enum):
     """Enumeration of workflow stages"""
     TARGET_INPUT = "target_input"
-    TARGET_PREDICTION = "target_prediction"
-    BINDER_DESIGN = "binder_design"
-    BINDER_PREDICTION = "binder_prediction"
-    COMPLEX_ANALYSIS = "complex_analysis"
+    TARGET_PREDICTION = "target_prediction"           # AF2/OF3 - Predict target structure
+    BINDER_SCAFFOLD_DESIGN = "binder_scaffold"        # RFDiffusion - Generate binder scaffold
+    BINDER_SEQUENCE_DESIGN = "binder_sequence"        # ProteinMPNN - Design sequences
+    COMPLEX_PREDICTION = "complex_prediction"         # AF-Multimer - Predict complex
     RESULTS = "results"
 
 
@@ -37,10 +37,12 @@ class TargetProteinData:
     pdb_id: Optional[str] = None
     input_type: str = "sequence"  # sequence, pdb_file, pdb_id
     structure_predicted: bool = False
-    model_used: Optional[str] = None
+    model_used: Optional[str] = None  # AF2 or OF3
     plddt_scores: Optional[List[float]] = None
     confidence_avg: Optional[float] = None
     binding_site_residues: List[int] = field(default_factory=list)
+    all_structures_pdb: Optional[str] = None  # All 5 AF2 predictions concatenated
+    structure_file_path: Optional[str] = None  # Path to saved PDB file
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -58,6 +60,14 @@ class BinderProteinData:
     confidence_avg: Optional[float] = None
     mpnn_sequences: List[str] = field(default_factory=list)
     selected_sequence_idx: int = 0
+    # RFDiffusion-specific fields
+    scaffold_pdb: Optional[str] = None  # Binder scaffold from RFDiffusion
+    scaffold_file_path: Optional[str] = None  # Path to saved scaffold PDB
+    rfdiffusion_params: Dict[str, Any] = field(default_factory=dict)  # contigs, hotspots, etc.
+    # ProteinMPNN-specific fields
+    mpnn_fasta_content: Optional[str] = None  # Raw FASTA output from ProteinMPNN
+    mpnn_scores: List[float] = field(default_factory=list)  # Score for each designed sequence
+    mpnn_num_sequences: int = 10  # Number of sequences to generate
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -66,7 +76,7 @@ class BinderProteinData:
 @dataclass
 class ComplexAnalysisData:
     """Data structure for complex analysis results"""
-    docking_method: str = "overlay"  # overlay, diffdock
+    docking_method: str = "alphafold_multimer"  # overlay, diffdock, alphafold_multimer
     complex_pdb: Optional[str] = None
     interface_residues_target: List[int] = field(default_factory=list)
     interface_residues_binder: List[int] = field(default_factory=list)
@@ -78,6 +88,12 @@ class ComplexAnalysisData:
     quality_grade: str = "N/A"
     feedback: List[str] = field(default_factory=list)
     docking_poses: List[Dict[str, Any]] = field(default_factory=list)
+    # AlphaFold-Multimer specific fields
+    multimer_zip_path: Optional[str] = None  # Path to raw ZIP from API
+    plddt_score: Optional[float] = None  # Average pLDDT score
+    plddt_per_residue: List[float] = field(default_factory=list)  # Per-residue pLDDT
+    multimer_model_used: int = 1  # Which AF-Multimer model (1-5)
+    candidate_rankings: List[Dict[str, Any]] = field(default_factory=list)  # All candidates with scores
     
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -111,9 +127,12 @@ class WorkflowSession:
         self.last_updated = datetime.now().isoformat()
     
     def advance_to_stage(self, stage: WorkflowStage):
-        """Move to the next stage"""
+        """Move to the next stage - preserves completed status if already completed"""
         self.current_stage = stage
-        self.update_stage_status(stage, StageStatus.IN_PROGRESS)
+        # Only mark as IN_PROGRESS if not already COMPLETED
+        current_status = self.stage_statuses.get(stage.value)
+        if current_status != StageStatus.COMPLETED.value:
+            self.update_stage_status(stage, StageStatus.IN_PROGRESS)
     
     def can_advance_to(self, stage: WorkflowStage) -> tuple[bool, str]:
         """Check if workflow can advance to a specific stage"""
@@ -125,23 +144,23 @@ class WorkflowSession:
                 return True, "Target input provided"
             return False, "No target protein input provided"
         
-        elif stage == WorkflowStage.BINDER_DESIGN:
+        elif stage == WorkflowStage.BINDER_SCAFFOLD_DESIGN:
             if self.target.structure_predicted or self.target.pdb_content:
                 return True, "Target structure available"
-            return False, "Target structure not available"
+            return False, "Target structure not available. Run target prediction first."
         
-        elif stage == WorkflowStage.BINDER_PREDICTION:
-            if self.binder.sequence:
-                return True, "Binder sequence provided"
-            return False, "No binder sequence provided"
+        elif stage == WorkflowStage.BINDER_SEQUENCE_DESIGN:
+            if self.binder.scaffold_pdb:
+                return True, "Binder scaffold available"
+            return False, "No binder scaffold. Run RFDiffusion first."
         
-        elif stage == WorkflowStage.COMPLEX_ANALYSIS:
-            if (self.target.pdb_content and self.binder.pdb_content):
-                return True, "Both structures available"
-            return False, "Both target and binder structures required"
+        elif stage == WorkflowStage.COMPLEX_PREDICTION:
+            if self.binder.sequence or (self.binder.mpnn_sequences and len(self.binder.mpnn_sequences) > 0):
+                return True, "Binder sequence available"
+            return False, "No binder sequence. Run ProteinMPNN first."
         
         elif stage == WorkflowStage.RESULTS:
-            if self.complex.complex_pdb or self.complex.num_contacts > 0:
+            if self.complex.complex_pdb or self.complex.plddt_score:
                 return True, "Analysis complete"
             return False, "Complex analysis not completed"
         

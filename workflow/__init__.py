@@ -1,6 +1,6 @@
 """
 Workflow Management Package
-Contains workflow state management and binding analysis modules
+Contains workflow state management, generative pipeline, and binding analysis modules
 """
 
 from .workflow_state import (
@@ -12,6 +12,8 @@ from .workflow_state import (
     BinderProteinData,
     ComplexAnalysisData
 )
+
+from .generative_pipeline import GenerativePipeline
 
 from .binding_analysis import (
     parse_pdb_content,
@@ -29,6 +31,7 @@ __all__ = [
     'TargetProteinData',
     'BinderProteinData',
     'ComplexAnalysisData',
+    'GenerativePipeline',
     'parse_pdb_content',
     'find_interface_residues',
     'assess_binding_quality',

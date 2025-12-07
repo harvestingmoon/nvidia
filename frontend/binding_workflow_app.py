@@ -199,6 +199,79 @@ st.markdown("""
         border: 1px solid #E5E5E5;
     }
     
+    /* Fix radio button label colors - AGGRESSIVE targeting for all radio buttons */
+    .stRadio label,
+    .stRadio label *,
+    .stRadio div[role="radiogroup"] label,
+    .stRadio div[role="radiogroup"] label *,
+    .stRadio span,
+    div[data-baseweb="radio"] label,
+    div[data-baseweb="radio"] label *,
+    div[data-baseweb="radio"] span {
+        color: #1A1A1A !important;
+        font-weight: 500 !important;
+    }
+    
+    .main .stRadio label {
+        color: #1A1A1A !important;
+        font-weight: 500 !important;
+    }
+    
+    .main .stRadio > label > div[data-testid="stMarkdownContainer"] > p {
+        color: #1A1A1A !important;
+    }
+    
+    .main .stRadio div[role="radiogroup"] label {
+        color: #1A1A1A !important;
+    }
+    
+    .main .stRadio div[role="radiogroup"] label span {
+        color: #1A1A1A !important;
+    }
+    
+    /* Fix all text inputs and labels in MAIN area only */
+    .main label, .main .stMarkdown p, .main .stMarkdown span {
+        color: #1A1A1A !important;
+    }
+    
+    /* Text areas in main area */
+    .main .stTextArea label, .main .stTextInput label {
+        color: #1A1A1A !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Force all text in main area to be dark */
+    .main div[data-testid="stMarkdownContainer"] p,
+    .main div[data-testid="stMarkdownContainer"] span {
+        color: #1A1A1A !important;
+    }
+    
+    /* Keep sidebar text WHITE/LIGHT */
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] .stMarkdown p,
+    section[data-testid="stSidebar"] .stMarkdown span,
+    section[data-testid="stSidebar"] div[data-testid="stMarkdownContainer"] p {
+        color: #E5E5E5 !important;
+    }
+    
+    /* Sidebar headers */
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3 {
+        color: #FFFFFF !important;
+    }
+    
+    /* Sidebar warning text */
+    section[data-testid="stSidebar"] .stAlert {
+        color: #1A1A1A !important;
+    }
+    
+    /* Keep sidebar RADIO buttons BLACK (visible on light background) */
+    section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label,
+    section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label span {
+        color: #1A1A1A !important;
+    }
+    
     .stRadio > div [role="radiogroup"] label {
         color: #1A1A1A;
         font-weight: 500;
@@ -223,6 +296,20 @@ st.markdown("""
     /* Sidebar */
     .css-1d391kg, [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1A1A1A 0%, #2D2D2D 100%);
+    }
+    
+    /* Sidebar buttons - consistent NVIDIA green styling */
+    section[data-testid="stSidebar"] .stButton > button {
+        background: linear-gradient(135deg, #76B900 0%, #5a8f00 100%) !important;
+        color: white !important;
+        border: none !important;
+        min-height: 45px !important;
+        height: auto !important;
+        padding: 10px 16px !important;
+    }
+    
+    section[data-testid="stSidebar"] .stButton > button:hover {
+        background: linear-gradient(135deg, #8ed100 0%, #76B900 100%) !important;
     }
     
     .css-1d391kg h1, .css-1d391kg h2, .css-1d391kg h3,
@@ -428,6 +515,10 @@ def initialize_session_state():
     
     if 'demo_mode' not in st.session_state:
         st.session_state.demo_mode = False
+    
+    # Show pipeline diagram by default on first load
+    if 'show_pipeline' not in st.session_state:
+        st.session_state.show_pipeline = True
 
 
 def render_progress_stepper():
@@ -600,10 +691,19 @@ def render_sidebar():
     except Exception as e:
         st.sidebar.markdown("# NVIDIA")
     
-    # Return to start button below logo
-    if st.sidebar.button("Return to Start", key="logo_home", use_container_width=True, help="Click to return to Target Input"):
-        session.advance_to_stage(WorkflowStage.TARGET_INPUT)
-        st.rerun()
+    # Prediction Page button - only show when pipeline is visible
+    if st.session_state.get('show_pipeline', False):
+        if st.sidebar.button("Prediction Page", key="logo_home", use_container_width=True, help="Click to go to Prediction Page"):
+            st.session_state.show_pipeline = False
+            session.advance_to_stage(WorkflowStage.TARGET_INPUT)
+            st.rerun()
+    else:
+        # View Pipeline Diagram button - only on prediction page
+        pipeline_path = Path(__file__).parent / "pipeline.html"
+        if pipeline_path.exists():
+            if st.sidebar.button("View Pipeline Diagram", key="pipeline_view", use_container_width=True, help="Click to view interactive pipeline diagram"):
+                st.session_state.show_pipeline = True
+                st.rerun()
     
     st.sidebar.title("Binding Workflow")
     
@@ -2200,6 +2300,53 @@ def main():
     
     # Sidebar
     render_sidebar()
+    
+    # Show pipeline HTML if button was clicked
+    if st.session_state.get('show_pipeline', False):
+        pipeline_path = Path(__file__).parent / "pipeline.html"
+        if pipeline_path.exists():
+            with open(pipeline_path, 'r') as f:
+                pipeline_html = f.read()
+            
+            # Add CSS to make iframe fill the main area naturally
+            st.markdown("""
+            <style>
+                /* Remove all padding from main container */
+                .appview-container .main .block-container {
+                    padding: 0 !important;
+                    padding-top: 0 !important;
+                    margin-top: -1rem !important;
+                    max-width: 100% !important;
+                    min-width: 100% !important;
+                }
+                
+                .stMainBlockContainer {
+                    padding: 0 !important;
+                    padding-top: 0 !important;
+                }
+                
+                div[data-testid="stAppViewBlockContainer"] {
+                    padding-top: 0 !important;
+                }
+                
+                /* Make iframe fill available space */
+                .element-container:has(iframe) {
+                    width: 100% !important;
+                    margin-top: 0 !important;
+                }
+                
+                iframe {
+                    width: 100% !important;
+                    height: 100vh !important;
+                    border: none !important;
+                    display: block !important;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Display full screen
+            st.components.v1.html(pipeline_html, height=2000, scrolling=True)
+            return
     
     # NVIDIA Branded Header
     st.markdown("""

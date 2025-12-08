@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protein Binder Design Pipeline</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.1/3Dmol-min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: auto;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 30px 20px 10px 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .header h1 {
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: #76b900;
+            letter-spacing: -1px;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .header .line {
+            height: 2px;
+            background: linear-gradient(to right, transparent, #76b900, transparent);
+            margin: 20px auto;
+            width: 60%;
+        }
+
+        .pipeline-wrapper {
+            overflow-x: auto;
+            padding: 20px 0;
+        }
+
+        .pipeline {
+            display: flex;
+            align-items: start;
+            gap: 20px;
+            min-width: max-content;
+            padding: 40px 20px;
+        }
+
+        .step-card {
+            width: 350px;
+            background: #111;
+            border: 2px solid #1a1a1a;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .step-card:hover {
+            border-color: #76b900;
+            box-shadow: 0 0 30px rgba(118, 185, 0, 0.3);
+            transform: translateY(-5px);
+        }
+
+        .step-header {
+            background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+            padding: 20px;
+            border-bottom: 2px solid #1a1a1a;
+            border-radius: 10px 10px 0 0;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: rgba(118, 185, 0, 0.1);
+            color: #76b900;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .step-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .visual-container {
+            height: 300px;
+            background: #000;
+            border-bottom: 2px solid #1a1a1a;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .viewer-3d {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .step-content {
+            padding: 20px;
+        }
+
+        .input-section, .process-section {
+            margin-bottom: 15px;
+        }
+
+        .section-label {
+            color: #666;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .input-tag {
+            display: inline-block;
+            background: rgba(118, 185, 0, 0.05);
+            color: #76b900;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-family: 'Courier New', monospace;
+            margin: 4px 4px 4px 0;
+            border: 1px solid rgba(118, 185, 0, 0.2);
+        }
+
+        .process-text {
+            color: #ccc;
+            font-size: 0.85rem;
+            line-height: 1.5;
+        }
+
+        .arrow-connector {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            margin-top: 160px;
+            flex-shrink: 0;
+        }
+
+        .arrow {
+            color: #76b900;
+            font-size: 2rem;
+            filter: drop-shadow(0 0 10px rgba(118, 185, 0, 0.5));
+        }
+
+        .output-bar {
+            margin-top: 40px;
+            background: linear-gradient(to right, #111, #000, #111);
+            border: 2px solid rgba(118, 185, 0, 0.3);
+            border-radius: 12px;
+            padding: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .output-label {
+            color: #76b900;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .output-text {
+            color: #ccc;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .pulse-dot {
+            width: 8px;
+            height: 8px;
+            background: #76b900;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .legend {
+            text-align: center;
+            margin-top: 30px;
+            color: #555;
+            font-size: 0.85rem;
+        }
+
+        .color-legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+
+        .color-label {
+            color: #999;
+            font-size: 0.9rem;
+        }
+
+        /* Section Headers */
+        .section-header {
+            text-align: center;
+            margin: 60px 0 30px 0;
+        }
+
+        .section-header h2 {
+            color: #76b900;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .section-subtitle {
+            color: #666;
+            font-size: 1rem;
+        }
+
+        /* Applications Grid */
+        .applications-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 0 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .app-card {
+            background: linear-gradient(135deg, #111 0%, #0a0a0a 100%);
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 25px;
+            transition: all 0.3s ease;
+        }
+
+        .app-card:hover {
+            border-color: #76b900;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(118, 185, 0, 0.2);
+        }
+
+        .app-icon {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+        }
+
+        .app-title {
+            color: #76b900;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .app-desc {
+            color: #888;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        /* Targets Grid */
+        .targets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 0 20px;
+            max-width: 1400px;
+            margin: 0 auto 60px auto;
+        }
+
+        .target-card {
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .target-card:hover {
+            border-color: #76b900;
+            box-shadow: 0 0 20px rgba(118, 185, 0, 0.3);
+            transform: translateY(-5px);
+        }
+
+        .target-viewer {
+            width: 100%;
+            height: 200px;
+            background: #000;
+            position: relative;
+        }
+
+        .target-info {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .target-name {
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .target-pdb {
+            color: #76b900;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+        }
+
+        .target-use {
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .placeholder-visual {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: #444;
+        }
+
+        .placeholder-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            color: #76b900;
+            opacity: 0.3;
+        }
+
+        .placeholder-text {
+            font-size: 0.8rem;
+            color: #444;
+        }
+
+        .sequence-visual {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            background: linear-gradient(180deg, #0a0a0a 0%, #111 100%);
+        }
+
+        .sequence-box {
+            background: #000;
+            border: 2px solid #76b900;
+            border-radius: 10px;
+            padding: 20px;
+            width: 95%;
+            height: 85%;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 25px rgba(118, 185, 0, 0.3);
+        }
+
+        .sequence-label {
+            color: #76b900;
+            font-size: 1rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+        }
+
+        .sequence-text {
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            color: #aaa;
+            line-height: 1.6;
+            word-break: break-all;
+            margin-bottom: 20px;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+
+        .sequence-stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            font-size: 0.9rem;
+            color: #76b900;
+            background: rgba(118, 185, 0, 0.15);
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid rgba(118, 185, 0, 0.3);
+        }
+
+        .loading-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #76b900;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>PROTEIN BINDER DESIGN</h1>
+            <div class="line"></div>
+            <div class="subtitle">AI-Powered Computational Pipeline</div>
+        </div>
+
+        <div class="legend">
+            Scroll horizontally to view full pipeline • Interactive 3D protein structures powered by 3Dmol.js<br>
+            <div class="color-legend">
+                <div class="color-item">
+                    <div class="color-box" style="background: #76b900;"></div>
+                    <div class="color-label"><strong>Green:</strong> Target Protein</div>
+                </div>
+                <div class="color-item">
+                    <div class="color-box" style="background: #ff6600;"></div>
+                    <div class="color-label"><strong>Orange:</strong> Designed Binder</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="pipeline-wrapper">
+            <div class="pipeline">
+                <!-- Step 1: Target Input -->
+                <div class="step-card">
+                    <div class="step-header">
+                        <div class="step-number">STEP 1</div>
+                        <div class="step-title">Target Input</div>
+                    </div>
+                    <div class="visual-container">
+                        <div class="sequence-visual">
+                            <div class="sequence-box">
+                                <div class="sequence-label">TARGET SEQUENCE</div>
+                                <div class="sequence-text">MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQQIAAALEHHHHHH...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="step-content">
+                        <div class="input-section">
+                            <div class="section-label">Input</div>
+                            <div>
+                                <span class="input-tag">Amino Acid Sequence</span>
+                                <span class="input-tag">PDB File</span>
+                                <span class="input-tag">PDB ID</span>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <div class="section-label">Process</div>
+                            <div class="process-text">You can enter an amino acid sequence, upload a PDB file, or specify a PDB ID. The app validates your input and lets you optimally specify binding site residues.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="arrow-connector">
+                    <div class="arrow">→</div>
+                </div>
+
+                <!-- Step 2: Target Structure Prediction -->
+                <div class="step-card">
+                    <div class="step-header">
+                        <div class="step-number">STEP 2</div>
+                        <div class="step-title">Target Structure Prediction</div>
+                    </div>
+                    <div class="visual-container">
+                        <div id="viewer-target" class="viewer-3d">
+                            <div class="loading-text">Loading 3D structure...</div>
+                        </div>
+                    </div>
+                    <div class="step-content">
+                        <div class="input-section">
+                            <div class="section-label">Models</div>
+                            <div>
+                                <span class="input-tag">ESMFold</span>
+                                <span class="input-tag">AlphaFold2</span>
+                                <span class="input-tag">OpenFold2</span>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <div class="section-label">Process</div>
+                            <div class="process-text">The app predicts the 3D structure of your target protein using selected models. You will get the visual representation of the predicted structure and confidence scores.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="arrow-connector">
+                    <div class="arrow">→</div>
+                </div>
+
+                <!-- Step 3: Binder Design -->
+                <div class="step-card">
+                    <div class="step-header">
+                        <div class="step-number">STEP 3</div>
+                        <div class="step-title">Binder Design</div>
+                    </div>
+                    <div class="visual-container">
+                        <div id="viewer-binder" class="viewer-3d">
+                            <div class="loading-text">Loading 3D structure...</div>
+                        </div>
+                    </div>
+                    <div class="step-content">
+                        <div class="input-section">
+                            <div class="section-label">Model</div>
+                            <div>
+                                <span class="input-tag">RFDiffusion</span>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <div class="section-label">Process</div>
+                            <div class="process-text">You can design a protein backbone (scaffold) that binds your target. The app predicts the 3D shape of the binder protein without sequence information.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="arrow-connector">
+                    <div class="arrow">→</div>
+                </div>
+
+                <!-- Step 4: Binder Prediction -->
+                <div class="step-card">
+                    <div class="step-header">
+                        <div class="step-number">STEP 4</div>
+                        <div class="step-title">Sequence Design</div>
+                    </div>
+                    <div class="visual-container">
+                        <div id="viewer-sequence" class="viewer-3d">
+                            <div class="loading-text">Loading 3D structure...</div>
+                        </div>
+                    </div>
+                    <div class="step-content">
+                        <div class="input-section">
+                            <div class="section-label">Model</div>
+                            <div>
+                                <span class="input-tag">ProteinMPNN</span>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <div class="section-label">Process</div>
+                            <div class="process-text">Takes the backbone structure and predicts possible amino acid sequences of the binder protein.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="arrow-connector">
+                    <div class="arrow">→</div>
+                </div>
+
+                <!-- Step 5: Complex Analysis -->
+                <div class="step-card">
+                    <div class="step-header">
+                        <div class="step-number">STEP 5</div>
+                        <div class="step-title">Complex Prediction</div>
+                    </div>
+                    <div class="visual-container">
+                        <div id="viewer-complex" class="viewer-3d">
+                            <div class="loading-text">Loading 3D structure...</div>
+                        </div>
+                    </div>
+                    <div class="step-content">
+                        <div class="input-section">
+                            <div class="section-label">Model</div>
+                            <div>
+                                <span class="input-tag">AlphaFold2 Multimer</span>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <div class="section-label">Process</div>
+                            <div class="process-text">The app combines the target and binder structures to form a complex and analyze their interaction. You get a visual representation of the complex along with confidence scores.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real-World Applications Section -->
+        <div class="section-header">
+            <h2>Why Protein Binding Matters</h2>
+            <p class="section-subtitle">Understanding the real-world impact of protein binder design</p>
+        </div>
+
+        <div class="applications-grid" style="margin-bottom: 60px;">
+            <div class="app-card">
+                <div class="app-title">Blocking & Inhibition</div>
+                <div class="app-desc">
+                    <strong>Most Common Use:</strong> Stop harmful proteins from working
+                    <br><br>
+                    <strong>Examples:</strong>
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• Cancer Treatment: Block growth signals to stop tumor growth</li>
+                        <li>• COVID-19: Bind spike protein to prevent cell entry</li>
+                        <li>• Autoimmune: Block inflammatory proteins to reduce symptoms</li>
+                    </ul>
+                    <br>
+                    <em style="color: #76b900;">Example Drug: Humira blocks TNF-alpha ($20B+ annual sales)</em>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="app-title">Activation & Enhancement</div>
+                <div class="app-desc">
+                    <strong>Purpose:</strong> Make proteins work better or turn them on
+                    <br><br>
+                    <strong>Examples:</strong>
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• Enzyme activation for metabolic disorders</li>
+                        <li>• Stabilize therapeutic proteins</li>
+                        <li>• Trigger beneficial signaling pathways</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="app-title">Delivery & Targeting</div>
+                <div class="app-desc">
+                    <strong>Purpose:</strong> Guide drugs to specific locations
+                    <br><br>
+                    <strong>Examples:</strong>
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• Target cancer cells directly to reduce side effects</li>
+                        <li>• Cross blood-brain barrier for neurological diseases</li>
+                        <li>• Organ-specific drug delivery</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="app-title">Detection & Diagnostics</div>
+                <div class="app-desc">
+                    <strong>Purpose:</strong> Find and measure specific proteins
+                    <br><br>
+                    <strong>Examples:</strong>
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• COVID rapid tests</li>
+                        <li>• Cancer screening (tumor marker detection)</li>
+                        <li>• Pregnancy tests (hCG detection)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="app-title">Modification & Control</div>
+                <div class="app-desc">
+                    <strong>Purpose:</strong> Change how target proteins behave
+                    <br><br>
+                    <strong>Examples:</strong>
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• Extend drug half-life (make medicines last longer)</li>
+                        <li>• Control cellular localization</li>
+                        <li>• Regulate protein-protein interactions</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="app-card">
+                <div class="app-title">Real Success Story</div>
+                <div class="app-desc">
+                    <strong style="color: #76b900;">Insulin Stabilization</strong>
+                    <br><br>
+                    Your workflow can design binders that:
+                    <ul style="list-style: none; padding-left: 0; margin-top: 10px; color: #999;">
+                        <li>• Make insulin last longer in the body</li>
+                        <li>• Prevent degradation</li>
+                        <li>• Control receptor interactions</li>
+                    </ul>
+                    <br>
+                    <em style="color: #00D4AA;">Design in minutes vs. months in the lab!</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- Example Targets Section -->
+        <div class="section-header">
+            <h2>Example Targets</h2>
+            <p class="section-subtitle">Famous protein targets for binder design</p>
+        </div>
+        
+        <div class="targets-grid">
+            <div class="target-card">
+                <div id="viewer-target-1" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">SARS-CoV-2 Spike</div>
+                    <div class="target-pdb">PDB: 6VYB</div>
+                    <div class="target-use">COVID-19 therapeutics & vaccines</div>
+                </div>
+            </div>
+            <div class="target-card">
+                <div id="viewer-target-2" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">PD-1 / PD-L1</div>
+                    <div class="target-pdb">PDB: 4ZQK</div>
+                    <div class="target-use">Cancer immunotherapy checkpoint</div>
+                </div>
+            </div>
+            <div class="target-card">
+                <div id="viewer-target-3" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">HER2</div>
+                    <div class="target-pdb">PDB: 1N8Z</div>
+                    <div class="target-use">Breast cancer targeted therapy</div>
+                </div>
+            </div>
+            <div class="target-card">
+                <div id="viewer-target-4" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">Insulin Receptor</div>
+                    <div class="target-pdb">PDB: 4ZXB</div>
+                    <div class="target-use">Diabetes treatment research</div>
+                </div>
+            </div>
+            <div class="target-card">
+                <div id="viewer-target-5" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">TNF-alpha</div>
+                    <div class="target-pdb">PDB: 1TNF</div>
+                    <div class="target-use">Autoimmune disease therapy</div>
+                </div>
+            </div>
+            <div class="target-card">
+                <div id="viewer-target-6" class="target-viewer"></div>
+                <div class="target-info">
+                    <div class="target-name">EGFR</div>
+                    <div class="target-pdb">PDB: 1IVO</div>
+                    <div class="target-use">Lung cancer targeted therapy</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Wait for 3Dmol to load
+        window.addEventListener('load', function() {
+            if (typeof $3Dmol === 'undefined') {
+                console.error('3Dmol.js failed to load');
+                return;
+            }
+
+            // Real PDB IDs for demonstration
+            // Target: 1CRN (Crambin - a small plant protein, good visual)
+            // Binder: 1L2Y (Trp-cage mini-protein - a designed protein)
+            // Complex: 1IGT (Antibody-antigen complex)
+
+            try {
+                // Target Structure - Step 2 (Green - full protein with surface)
+                const targetViewer = $3Dmol.createViewer('viewer-target', {
+                    backgroundColor: 'black',
+                    antialias: true
+                });
+                $3Dmol.download("pdb:1CRN", targetViewer, {}, function() {
+                    // Cartoon for structure + transparent surface to show "complete" protein
+                    targetViewer.setStyle({}, {cartoon: {color: '#76b900', thickness: 1.0}});
+                    targetViewer.addSurface($3Dmol.SurfaceType.VDW, {opacity: 0.3, color: '#76b900'});
+                    targetViewer.zoomTo();
+                    targetViewer.spin('y', 1);
+                    targetViewer.render();
+                    document.querySelector('#viewer-target .loading-text')?.remove();
+                });
+
+                // Binder Design - Step 3 (Orange - backbone only, line trace)
+                const binderViewer = $3Dmol.createViewer('viewer-binder', {
+                    backgroundColor: 'black',
+                    antialias: true
+                });
+                $3Dmol.download("pdb:1L2Y", binderViewer, {}, function() {
+                    // Line style - shows ONLY the backbone trace (like a skeleton)
+                    binderViewer.setStyle({}, {line: {color: '#ff6600', linewidth: 3}});
+                    // Also add spheres at CA atoms to show the backbone path
+                    binderViewer.addStyle({atom: 'CA'}, {sphere: {color: '#ff6600', radius: 0.5}});
+                    binderViewer.zoomTo();
+                    binderViewer.spin('y', 1);
+                    binderViewer.render();
+                    document.querySelector('#viewer-binder .loading-text')?.remove();
+                });
+
+                // Sequence - Step 4 (Orange - full protein with surface, like Step 2)
+                const sequenceViewer = $3Dmol.createViewer('viewer-sequence', {
+                    backgroundColor: 'black',
+                    antialias: true
+                });
+                $3Dmol.download("pdb:1L2Y", sequenceViewer, {}, function() {
+                    // Cartoon + transparent surface - same style as Step 2
+                    sequenceViewer.setStyle({}, {cartoon: {color: '#ff6600', thickness: 1.0}});
+                    sequenceViewer.addSurface($3Dmol.SurfaceType.VDW, {opacity: 0.3, color: '#ff6600'});
+                    sequenceViewer.zoomTo();
+                    sequenceViewer.spin('y', 1);
+                    sequenceViewer.render();
+                    document.querySelector('#viewer-sequence .loading-text')?.remove();
+                });
+
+                // Complex - Step 5 (Target + Binder together - shows predicted binding)
+                const complexViewer = $3Dmol.createViewer('viewer-complex', {
+                    backgroundColor: 'black',
+                    antialias: true
+                });
+                // Load target (1CRN) and binder (1L2Y) together
+                $3Dmol.download("pdb:1CRN", complexViewer, {}, function() {
+                    complexViewer.setStyle({}, {cartoon: {color: '#76b900', thickness: 1.0}});
+                    complexViewer.addSurface($3Dmol.SurfaceType.VDW, {opacity: 0.3, color: '#76b900'});
+                    // Now add the binder
+                    $3Dmol.download("pdb:1L2Y", complexViewer, {}, function() {
+                        // Style the second model (binder) in orange with surface
+                        complexViewer.setStyle({model: 1}, {cartoon: {color: '#ff6600', thickness: 1.0}});
+                        complexViewer.addSurface($3Dmol.SurfaceType.VDW, {opacity: 0.3, color: '#ff6600'}, {model: 1});
+                        complexViewer.zoomTo();
+                        complexViewer.spin('y', 1);
+                        complexViewer.render();
+                        document.querySelector('#viewer-complex .loading-text')?.remove();
+                    });
+                });
+
+            } catch (error) {
+                console.error('Error initializing 3D viewers:', error);
+            }
+
+            // Initialize Example Target Viewers
+            try {
+                const targets = [
+                    { id: 'viewer-target-1', pdb: '6VYB', color: '#76b900' },
+                    { id: 'viewer-target-2', pdb: '4ZQK', color: '#76b900' },
+                    { id: 'viewer-target-3', pdb: '1N8Z', color: '#76b900' },
+                    { id: 'viewer-target-4', pdb: '4ZXB', color: '#76b900' },
+                    { id: 'viewer-target-5', pdb: '1TNF', color: '#76b900' },
+                    { id: 'viewer-target-6', pdb: '1IVO', color: '#76b900' }
+                ];
+
+                targets.forEach(target => {
+                    const viewer = $3Dmol.createViewer(target.id, {
+                        backgroundColor: 'black',
+                        antialias: true
+                    });
+                    
+                    $3Dmol.download(`pdb:${target.pdb}`, viewer, {}, function() {
+                        viewer.setStyle({}, {
+                            cartoon: { color: target.color, thickness: 0.8 }
+                        });
+                        viewer.addSurface($3Dmol.SurfaceType.VDW, {
+                            opacity: 0.25,
+                            color: target.color
+                        });
+                        viewer.zoomTo();
+                        viewer.spin('y', 0.5);
+                        viewer.render();
+                    });
+                });
+            } catch (error) {
+                console.error('Error initializing target viewers:', error);
+            }
+        });
+    </script>
+</body>
+</html>

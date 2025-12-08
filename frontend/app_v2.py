@@ -520,17 +520,91 @@ def validate_pdb_content(pdb_content: str) -> dict:
     except Exception as e:
         return {"valid": False, "error": f"PDB validation error: {str(e)}"}
 
-def create_3d_visualization(pdb_content: str) -> str:
+# def create_3d_visualization(pdb_content: str) -> str:
+#     """
+#     Create a 3D molecular visualization using py3Dmol
+#     """
+#     try:
+#         viewer = py3Dmol.view(width=800, height=600)
+#         viewer.addModel(pdb_content, 'pdb')
+#         viewer.setStyle({'cartoon': {'color': 'spectrum'}})
+#         viewer.zoomTo()
+#         viewer.spin(True)
+#         return viewer._make_html()
+#     except Exception as e:
+#         st.error(f"Visualization error: {str(e)}")
+#         return f"<p>Visualization failed: {str(e)}</p>"
+
+def create_3d_visualization(
+    pdb_content: str,
+    vmin: float = 50.0,   # lower bound of pLDDT range for color scale
+    vmax: float = 90.0    # upper bound of pLDDT range for color scale
+) -> str:
     """
-    Create a 3D molecular visualization using py3Dmol
+    Create a 3D molecular visualization using py3Dmol, colored by pLDDT
+    (stored in the B-factor column, as in AlphaFold outputs), and append
+    an AlphaFold-style pLDDT legend. Returns HTML string.
     """
     try:
         viewer = py3Dmol.view(width=800, height=600)
         viewer.addModel(pdb_content, 'pdb')
-        viewer.setStyle({'cartoon': {'color': 'spectrum'}})
+
+        # AlphaFold-style: color by B-factor (pLDDT) with a blue↔red gradient
+        viewer.setStyle({
+            "cartoon": {
+                "colorscheme": {
+                    "prop": "b",          # use B-factor as property (pLDDT)
+                    "gradient": "roygb",  # red–orange–yellow–green–blue
+                    "min": vmin,
+                    "max": vmax
+                }
+            }
+        })
+
         viewer.zoomTo()
         viewer.spin(True)
-        return viewer._make_html()
+
+        html = viewer._make_html()
+
+        # Legend: approximate AlphaFold color categories
+        legend_html = f"""
+<div style="font-family: sans-serif; margin-top: 10px;">
+  <b>pLDDT confidence (B-factor)</b>
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 13px;">
+    <div>
+      <span style="display:inline-block;width:14px;height:14px;
+                   background:#0053D6;margin-right:4px;border-radius:2px;"></span>
+      Very high (90-100)
+    </div>
+    <div>
+      <span style="display:inline-block;width:14px;height:14px;
+                   background:#4AA3D6;margin-right:4px;border-radius:2px;"></span>
+      Confident (70-90)
+    </div>
+    <div>
+      <span style="display:inline-block;width:14px;height:14px;
+                   background:#FFC800;margin-right:4px;border-radius:2px;"></span>
+      Low (50-70)
+    </div>
+    <div>
+      <span style="display:inline-block;width:14px;height:14px;
+                   background:#FF7D45;margin-right:4px;border-radius:2px;"></span>
+      Very low (&lt;50)
+    </div>
+  </div>
+  <div style="margin-top:6px;font-size:11px;color:#555;">
+    Colored by B-factor (pLDDT). Adjust vmin={vmin} / vmax={vmax} in this function if needed.
+  </div>
+</div>
+"""
+
+        if "</body>" in html:
+            html = html.replace("</body>", legend_html + "</body>")
+        else:
+            html += legend_html
+
+        return html
+
     except Exception as e:
         st.error(f"Visualization error: {str(e)}")
         return f"<p>Visualization failed: {str(e)}</p>"

@@ -62,16 +62,24 @@ class GenerativePipeline:
     
     # ================== STEP 1: TARGET STRUCTURE PREDICTION ==================
     
-    def run_target_prediction(self, model: str = "AF2", algorithm: str = "mmseqs2") -> Tuple[bool, str]:
+    def run_target_prediction(
+        self, 
+        model: str = "AF2", 
+        algorithm: str = "mmseqs2",
+        num_diffusion_samples: int = 1,
+        model_seeds: List[int] = None
+    ) -> Tuple[bool, str]:
         """
         Step 1: Predict target protein 3D structure
         
         Args:
-            model: "AF2" for AlphaFold2 or "OF3" for OpenFold3
-            algorithm: MSA algorithm ("mmseqs2" or "jackhmmer")
+            model: "AF2" for AlphaFold2, "OF3" for OpenFold3, or "AF3" for AlphaFold3
+            algorithm: MSA algorithm ("mmseqs2" or "jackhmmer") - only for AF2
+            num_diffusion_samples: Number of diffusion samples for AF3 (default 1)
+            model_seeds: Random seeds for AF3 reproducibility (default [42])
             
         Returns:
-            (success, message)
+            (success, message) tuple
         """
         print(f"\n{'='*60}")
         print(f"STEP 1: Target Structure Prediction ({model})")
@@ -93,25 +101,48 @@ class GenerativePipeline:
                 result = self._call_alphafold2(self.session.target.sequence, algorithm)
             elif model.upper() == "OF3":
                 result = self._call_openfold3(self.session.target.sequence)
+            elif model.upper() == "AF3":
+                result = self._call_alphafold3(
+                    self.session.target.sequence,
+                    num_diffusion_samples=num_diffusion_samples,
+                    model_seeds=model_seeds
+                )
             else:
                 print(f"[DEBUG] ERROR: Unknown model {model}")
-                return False, f"Unknown model: {model}"
+                return False, f"Unknown model: {model}. Use 'AF2' for AlphaFold2, 'OF3' for OpenFold3, or 'AF3' for AlphaFold3."
             
             print(f"[DEBUG] API call successful, processing results...")
             
             # Store results
             if isinstance(result, list) and len(result) > 0:
-                # AF2 returns list of 5 structures
-                print(f"[DEBUG] Received {len(result)} structures from AF2")
-                self.session.target.pdb_content = result[0]
-                self.session.target.all_structures_pdb = "\n".join(result)
+                # AF2 returns list of 5 structures ranked by confidence
+                print(f"[DEBUG] Received {len(result)} structures from AlphaFold2")
+                self.session.target.pdb_content = result[0]  # Best (top-ranked) structure
+                
+                # Combine all structures with MODEL/ENDMDL markers for multi-model PDB
+                all_models = []
+                for idx, pdb_str in enumerate(result):
+                    all_models.append(f"MODEL     {idx + 1}")
+                    all_models.append(pdb_str.strip())
+                    all_models.append("ENDMDL")
+                self.session.target.all_structures_pdb = "\n".join(all_models)
+                
+                print(f"[DEBUG] Stored {len(result)} structure models")
             else:
                 print(f"[DEBUG] Received single structure")
                 self.session.target.pdb_content = result
             
             print(f"[DEBUG] PDB content length: {len(self.session.target.pdb_content)} characters")
             
-            self.session.target.model_used = model.upper()
+            # Calculate pLDDT score from PDB B-factor column
+            plddt_score = self._calculate_plddt(self.session.target.pdb_content)
+            if plddt_score > 0:
+                self.session.target.confidence_avg = plddt_score
+                print(f"[DEBUG] Calculated average pLDDT: {plddt_score:.2f}")
+            
+            # Set model name
+            model_names = {"AF2": "AlphaFold2", "OF3": "OpenFold3", "AF3": "AlphaFold3"}
+            self.session.target.model_used = model_names.get(model.upper(), model)
             self.session.target.structure_predicted = True
             
             # Save to file
@@ -122,40 +153,62 @@ class GenerativePipeline:
                 f.write(self.session.target.pdb_content)
             self.session.target.structure_file_path = str(filepath)
             
-            # Save all structures if AF2
+            # Save all structures if AF2 (multi-model output)
             if model.upper() == "AF2" and self.session.target.all_structures_pdb:
                 all_filename = f"{self.session.project_name}_target_{model}_all.pdb"
-                print(f"[DEBUG] Saving all 5 structures to {all_filename}")
-                with open(self.output_dir / all_filename, 'w') as f:
+                all_filepath = self.output_dir / all_filename
+                print(f"[DEBUG] Saving all {len(result) if isinstance(result, list) else 1} structures to {all_filename}")
+                with open(all_filepath, 'w') as f:
                     f.write(self.session.target.all_structures_pdb)
             
             print(f"[DEBUG] Updating stage status to COMPLETED")
             self.session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.COMPLETED)
             self.session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
             
-            print(f"✅ Target structure predicted and saved to {filepath}")
-            return True, f"Target structure predicted with {model}"
+            confidence_info = f" (pLDDT: {plddt_score:.1f})" if plddt_score > 0 else ""
+            print(f"✅ Target structure predicted with {self.session.target.model_used}{confidence_info}")
+            print(f"   Saved to: {filepath}")
+            return True, f"Target structure predicted with {self.session.target.model_used}{confidence_info}"
             
         except Exception as e:
             print(f"[DEBUG] ERROR: {str(e)}")
+            import traceback
+            print(f"[DEBUG] Traceback: {traceback.format_exc()}")
             self.session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.FAILED)
             return False, f"Target prediction failed: {str(e)}"
     
     def _call_alphafold2(self, sequence: str, algorithm: str = "mmseqs2") -> List[str]:
-        """Call AlphaFold2 API"""
-        print(f"[DEBUG] _call_alphafold2: sequence length={len(sequence)}, algorithm={algorithm}")
+        """
+        Call AlphaFold2 API with enhanced options
         
+        Args:
+            sequence: Protein sequence to predict
+            algorithm: MSA algorithm - "mmseqs2" (faster) or "jackhmmer" (more sensitive)
+            
+        Returns:
+            List of 5 PDB structure strings ranked by confidence
+        """
+        print(f"[DEBUG] _call_alphafold2: sequence length={len(sequence)}, algorithm={algorithm}")
+        print(f"[DEBUG] AlphaFold2 typically takes 5-10 minutes for structure prediction")
+        
+        # AlphaFold2 payload with all available options
         payload = {
             "sequence": sequence,
-            "algorithm": algorithm
+            "algorithm": algorithm,
+            "e_value": 0.0001,          # E-value threshold for MSA
+            "iterations": 1,             # Number of MSA iterations  
+            "databases": ["small_bfd"],  # MSA databases to search
+            "relax_prediction": False    # Whether to relax structure (slower)
         }
         
         print(f"[DEBUG] Sending POST request to {self.endpoints['af2']}")
+        print(f"[DEBUG] Payload: algorithm={algorithm}, databases=small_bfd")
+        
         response = requests.post(
             self.endpoints["af2"],
             headers=self.headers,
             json=payload,
-            timeout=(10, 310)
+            timeout=(10, 600)  # Extended timeout for long sequences
         )
         
         print(f"[DEBUG] Response status code: {response.status_code}")
@@ -163,13 +216,21 @@ class GenerativePipeline:
         if response.status_code == 200:
             result = response.json()
             print(f"[DEBUG] Got immediate response, type: {type(result)}")
-            return result  # List of 5 PDB strings
+            # AlphaFold2 returns a list of 5 PDB strings ranked by confidence
+            if isinstance(result, list):
+                print(f"[DEBUG] Received {len(result)} structure predictions")
+                return result
+            else:
+                # Handle case where result is wrapped
+                return [result] if isinstance(result, str) else result
         elif response.status_code == 202:
-            print(f"[DEBUG] Got 202, will poll for results")
+            print(f"[DEBUG] Got 202 (Accepted), will poll for results")
+            print(f"[DEBUG] AlphaFold2 is processing - this may take 5-10 minutes...")
             return self._poll_async_result(response, self.endpoints["status"])
         else:
-            print(f"[DEBUG] Error response: {response.text[:200]}")
-            raise Exception(f"AF2 API error: {response.status_code} - {response.text}")
+            error_detail = response.text[:500] if len(response.text) > 500 else response.text
+            print(f"[DEBUG] Error response: {error_detail}")
+            raise Exception(f"AlphaFold2 API error: {response.status_code} - {error_detail}")
     
     def _call_openfold3(self, sequence: str) -> str:
         """Call OpenFold3 API"""
@@ -210,6 +271,125 @@ class GenerativePipeline:
             return pdb_text
         else:
             raise Exception(f"OF3 API error: {response.status_code} - {response.text}")
+    
+    def _call_alphafold3(
+        self, 
+        sequence: str, 
+        num_diffusion_samples: int = 1,
+        model_seeds: List[int] = None
+    ) -> str:
+        """
+        Call self-hosted AlphaFold3 server
+        
+        Args:
+            sequence: Protein sequence to predict
+            num_diffusion_samples: Number of diffusion samples (default 1)
+            model_seeds: Random seeds for reproducibility (default [42])
+            
+        Returns:
+            PDB structure string
+        """
+        from core.protein_models import ALPHAFOLD3_SERVER
+        
+        if model_seeds is None:
+            model_seeds = [42]
+        
+        print(f"[DEBUG] _call_alphafold3: sequence length={len(sequence)}")
+        print(f"[DEBUG] Server: {ALPHAFOLD3_SERVER['host']}")
+        print(f"[DEBUG] Diffusion samples: {num_diffusion_samples}, Seeds: {model_seeds}")
+        
+        # Check server health first
+        health_url = f"{ALPHAFOLD3_SERVER['host']}{ALPHAFOLD3_SERVER['health_endpoint']}"
+        print(f"[DEBUG] Checking server health at {health_url}")
+        
+        try:
+            health_response = requests.get(health_url, timeout=10)
+            if health_response.status_code != 200:
+                raise Exception(f"AlphaFold3 server health check failed: {health_response.status_code}")
+            print(f"[DEBUG] Server health check passed")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Cannot connect to AlphaFold3 server at {ALPHAFOLD3_SERVER['host']}: {str(e)}")
+        
+        # Prepare prediction payload
+        payload = {
+            "name": self.session.project_name,
+            "sequences": [{"id": "A", "sequence": sequence}],
+            "model_seeds": model_seeds,
+            "num_diffusion_samples": num_diffusion_samples
+        }
+        
+        predict_url = f"{ALPHAFOLD3_SERVER['host']}{ALPHAFOLD3_SERVER['predict_endpoint']}"
+        print(f"[DEBUG] Sending prediction request to {predict_url}")
+        
+        # AlphaFold3 can take a while, use extended timeout
+        response = requests.post(
+            predict_url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=(10, 1800)  # 30 minute timeout for prediction
+        )
+        
+        print(f"[DEBUG] Response status code: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"[DEBUG] Got response, keys: {result.keys() if isinstance(result, dict) else type(result)}")
+            
+            # Extract PDB content from response
+            pdb_text = None
+            
+            if isinstance(result, dict):
+                # Check for error first
+                if result.get("error"):
+                    raise Exception(f"AlphaFold3 error: {result['error']}")
+                
+                # Try direct PDB content keys (from our server)
+                if "model_pdb_content" in result and result["model_pdb_content"]:
+                    pdb_text = result["model_pdb_content"]
+                    print(f"[DEBUG] Found PDB in 'model_pdb_content'")
+                
+                # Try base64 encoded PDB
+                elif "model_pdb_base64" in result and result["model_pdb_base64"]:
+                    import base64
+                    pdb_text = base64.b64decode(result["model_pdb_base64"]).decode('utf-8')
+                    print(f"[DEBUG] Decoded PDB from 'model_pdb_base64'")
+                
+                # Try CIF content and convert
+                elif "model_cif_content" in result and result["model_cif_content"]:
+                    cif_text = result["model_cif_content"]
+                    print(f"[DEBUG] Found CIF in 'model_cif_content', using as-is (CIF format)")
+                    # For now, return CIF - downstream code should handle both formats
+                    pdb_text = cif_text
+                
+                # Try other common keys
+                if not pdb_text:
+                    for key in ["pdb", "structure", "output", "model", "prediction", "result"]:
+                        if key in result:
+                            value = result[key]
+                            if isinstance(value, str) and ("ATOM" in value or "MODEL" in value):
+                                pdb_text = value
+                                print(f"[DEBUG] Found structure in '{key}'")
+                                break
+            
+            elif isinstance(result, str):
+                pdb_text = result
+            
+            if not pdb_text:
+                print(f"[DEBUG] Could not parse PDB from response: {str(result)[:500]}")
+                raise ValueError(f"Could not extract PDB from AlphaFold3 response. Keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+            
+            # Validate content
+            valid_starts = ("ATOM", "HETATM", "MODEL", "HEADER", "REMARK", "data_", "#")  # Added CIF formats
+            if not pdb_text.strip().startswith(valid_starts):
+                print(f"[DEBUG] Warning: Structure content may be invalid, first 100 chars: {pdb_text[:100]}")
+            
+            print(f"[DEBUG] Successfully extracted structure, length: {len(pdb_text)}")
+            return pdb_text
+            
+        else:
+            error_detail = response.text[:500] if len(response.text) > 500 else response.text
+            print(f"[DEBUG] Error response: {error_detail}")
+            raise Exception(f"AlphaFold3 API error: {response.status_code} - {error_detail}")
     
     # ================== STEP 2: BINDER SCAFFOLD DESIGN ==================
     
@@ -600,17 +780,49 @@ class GenerativePipeline:
     # ================== HELPER METHODS ==================
     
     def _poll_async_result(self, initial_response: requests.Response, status_endpoint: str) -> Any:
-        """Poll for async API results"""
+        """
+        Poll for async API results with detailed progress tracking
+        
+        Args:
+            initial_response: The initial 202 response from the API
+            status_endpoint: The endpoint to poll for status
+            
+        Returns:
+            The result JSON from the API
+        """
         req_id = initial_response.headers.get("NVCF-REQID") or initial_response.headers.get("nvcf-reqid")
         if not req_id:
             raise Exception("No request ID in async response")
         
-        print(f"⏳ Polling for results (request ID: {req_id})...")
+        print(f"\n{'='*50}")
+        print(f"⏳ ASYNC REQUEST SUBMITTED")
+        print(f"   Request ID: {req_id}")
+        print(f"   Status Endpoint: {status_endpoint}")
+        print(f"{'='*50}")
         
-        max_attempts = 180
+        max_attempts = 180  # 30 minutes at 10-second intervals
         poll_interval = 10
         
+        # Progress stages for AlphaFold2
+        stages = [
+            (0, 30, "🔍 Running MSA search..."),
+            (30, 60, "📊 Building multiple sequence alignment..."),
+            (60, 120, "🧬 Running neural network structure prediction..."),
+            (120, 180, "⚙️ Refining structure predictions...")
+        ]
+        
         for attempt in range(max_attempts):
+            elapsed_seconds = (attempt + 1) * poll_interval
+            elapsed_minutes = elapsed_seconds // 60
+            elapsed_secs = elapsed_seconds % 60
+            
+            # Determine current stage message
+            stage_msg = "Processing..."
+            for start, end, msg in stages:
+                if start <= elapsed_seconds // 10 < end:
+                    stage_msg = msg
+                    break
+            
             time.sleep(poll_interval)
             
             try:
@@ -621,21 +833,39 @@ class GenerativePipeline:
                 )
                 
                 if result.status_code == 200:
-                    print(f"✅ Request completed after {(attempt + 1) * poll_interval}s")
+                    print(f"\n✅ Request completed after {elapsed_minutes}m {elapsed_secs}s")
+                    print(f"   Total polling attempts: {attempt + 1}")
                     return result.json()
-                elif result.status_code == 202:
-                    if (attempt + 1) % 6 == 0:  # Print every minute
-                        print(f"   Still polling... ({(attempt + 1) * poll_interval}s)")
-                    continue
-                else:
-                    raise Exception(f"Polling failed: {result.status_code} - {result.text}")
                     
+                elif result.status_code == 202:
+                    # Print progress every 30 seconds
+                    if (attempt + 1) % 3 == 0:
+                        progress_pct = min(95, int((elapsed_seconds / 600) * 100))  # Cap at 95%
+                        print(f"   [{elapsed_minutes:02d}:{elapsed_secs:02d}] {stage_msg} ({progress_pct}%)")
+                    continue
+                    
+                else:
+                    error_text = result.text[:300] if len(result.text) > 300 else result.text
+                    raise Exception(f"Polling failed: {result.status_code} - {error_text}")
+                    
+            except requests.exceptions.Timeout:
+                print(f"   [WARN] Poll request timed out at attempt {attempt + 1}, retrying...")
+                continue
             except requests.exceptions.RequestException as e:
                 if attempt < max_attempts - 1:
+                    print(f"   [WARN] Request error: {str(e)}, retrying...")
                     continue
                 raise e
         
-        raise Exception(f"Timeout after {max_attempts * poll_interval // 60} minutes")
+        timeout_minutes = max_attempts * poll_interval // 60
+        raise Exception(
+            f"Request timed out after {timeout_minutes} minutes.\n"
+            f"This can happen with:\n"
+            f"• Very long sequences (>500 residues)\n"
+            f"• Server under heavy load\n"
+            f"• Complex protein structures\n\n"
+            f"💡 Try: shorter sequence, OpenFold3, or try again later."
+        )
     
     def _poll_async_multimer(self, initial_response: requests.Response) -> requests.Response:
         """Poll for AlphaFold-Multimer results (returns raw response with ZIP)"""

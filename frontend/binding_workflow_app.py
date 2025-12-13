@@ -505,6 +505,285 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def render_pipeline_diagram():
+    """Render the pipeline diagram using native Streamlit components"""
+    
+    # Custom CSS for pipeline styling
+    st.markdown("""
+    <style>
+        .pipeline-header {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .pipeline-header h1 {
+            color: #76B900 !important;
+            font-size: 2.5rem;
+            font-weight: 900;
+            letter-spacing: -1px;
+            border: none !important;
+        }
+        .pipeline-subtitle {
+            color: #888;
+            font-size: 1.1rem;
+        }
+        .pipeline-divider {
+            height: 2px;
+            background: linear-gradient(to right, transparent, #76B900, transparent);
+            margin: 15px auto;
+            width: 60%;
+        }
+        .step-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #111 100%);
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 0;
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        .step-card:hover {
+            border-color: #76B900;
+            box-shadow: 0 0 30px rgba(118, 185, 0, 0.3);
+        }
+        .step-header {
+            background: linear-gradient(135deg, #222 0%, #1a1a1a 100%);
+            padding: 15px;
+            border-radius: 10px 10px 0 0;
+            border-bottom: 2px solid #333;
+        }
+        .step-number {
+            display: inline-block;
+            background: rgba(118, 185, 0, 0.15);
+            color: #76B900;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .step-title {
+            color: #fff;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+        .step-content {
+            padding: 15px;
+            color: #ccc;
+        }
+        .model-tag {
+            display: inline-block;
+            background: rgba(118, 185, 0, 0.1);
+            color: #76B900;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin: 3px;
+            border: 1px solid rgba(118, 185, 0, 0.3);
+        }
+        .arrow-col {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #76B900;
+            font-size: 2rem;
+        }
+        .legend-box {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .app-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #111 100%);
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            height: 100%;
+        }
+        .app-card:hover {
+            border-color: #76B900;
+        }
+        .app-title {
+            color: #76B900;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .app-desc {
+            color: #999;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Header
+    st.markdown("""
+    <div class="pipeline-header">
+        <h1>🧬 PROTEIN BINDER DESIGN</h1>
+        <div class="pipeline-divider"></div>
+        <p class="pipeline-subtitle">AI-Powered Computational Pipeline</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Legend
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; color: #666; margin-bottom: 20px;">
+            <span><span class="legend-box" style="background: #76B900;"></span><strong>Green:</strong> Target Protein</span>
+            &nbsp;&nbsp;&nbsp;&nbsp;
+            <span><span class="legend-box" style="background: #FF6600;"></span><strong>Orange:</strong> Designed Binder</span>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Pipeline Steps Definition
+    pipeline_steps = [
+        {
+            "num": 1,
+            "title": "Target Input",
+            "stage": WorkflowStage.TARGET_INPUT,
+            "models": ["Amino Acid Sequence", "PDB File", "PDB ID"],
+            "description": "Enter an amino acid sequence, upload a PDB file, or specify a PDB ID. The app validates your input and lets you specify binding site residues.",
+            "pdb": None,  # No 3D view for input
+            "color": "#76B900"
+        },
+        {
+            "num": 2,
+            "title": "Target Structure Prediction",
+            "stage": WorkflowStage.TARGET_PREDICTION,
+            "models": ["AlphaFold3", "AlphaFold2", "OpenFold3"],
+            "description": "Predict the 3D structure of your target protein. Get visual representation and confidence scores.",
+            "pdb": "1CRN",
+            "color": "#76B900"
+        },
+        {
+            "num": 3,
+            "title": "Binder Scaffold Design",
+            "stage": WorkflowStage.BINDER_SCAFFOLD_DESIGN,
+            "models": ["RFDiffusion"],
+            "description": "Design a protein backbone (scaffold) that binds your target. Predicts the 3D shape without sequence information.",
+            "pdb": "1L2Y",
+            "color": "#FF6600"
+        },
+        {
+            "num": 4,
+            "title": "Sequence Design",
+            "stage": WorkflowStage.BINDER_SEQUENCE_DESIGN,
+            "models": ["ProteinMPNN"],
+            "description": "Takes the backbone structure and predicts possible amino acid sequences for the binder protein.",
+            "pdb": "1L2Y",
+            "color": "#FF6600"
+        },
+        {
+            "num": 5,
+            "title": "Complex Prediction",
+            "stage": WorkflowStage.COMPLEX_PREDICTION,
+            "models": ["AlphaFold2 Multimer"],
+            "description": "Combines target and binder structures to analyze their interaction. Get visual representation and confidence scores.",
+            "pdb": "1IGT",
+            "color": "#76B900"
+        }
+    ]
+    
+    st.markdown("### 🔬 Pipeline Steps")
+    st.markdown("**Click on any step to navigate directly to that stage:**")
+    st.markdown("---")
+    
+    # Render steps in a row
+    cols = st.columns([3, 1, 3, 1, 3, 1, 3, 1, 3])
+    
+    for i, step in enumerate(pipeline_steps):
+        col_idx = i * 2  # 0, 2, 4, 6, 8
+        
+        with cols[col_idx]:
+            # Create clickable card using a button
+            st.markdown(f"""
+            <div class="step-card">
+                <div class="step-header">
+                    <div class="step-number">STEP {step['num']}</div>
+                    <div class="step-title">{step['title']}</div>
+                </div>
+                <div class="step-content">
+                    <div style="margin-bottom: 10px;">
+                        {''.join([f'<span class="model-tag">{m}</span>' for m in step['models']])}
+                    </div>
+                    <p style="font-size: 0.85rem; color: #aaa;">{step['description'][:100]}...</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Navigation button
+            if st.button(f"Go to Step {step['num']} →", key=f"pipeline_step_{step['num']}", use_container_width=True):
+                st.session_state.workflow_session.advance_to_stage(step['stage'])
+                st.session_state.show_pipeline = False
+                st.rerun()
+        
+        # Add arrow between steps (except after last step)
+        if i < len(pipeline_steps) - 1:
+            with cols[col_idx + 1]:
+                st.markdown("""
+                <div style="display: flex; align-items: center; justify-content: center; height: 200px; color: #76B900; font-size: 2rem;">
+                    →
+                </div>
+                """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Applications Section
+    st.markdown("### 🎯 Why Protein Binding Matters")
+    st.markdown("Understanding the real-world impact of protein binder design")
+    
+    app_cols = st.columns(3)
+    
+    applications = [
+        {
+            "title": "🚫 Blocking & Inhibition",
+            "desc": "**Most Common Use:** Stop harmful proteins\n\n• Cancer: Block growth signals\n• COVID-19: Bind spike protein\n• Autoimmune: Block inflammation\n\n*Example: Humira ($20B+ sales)*"
+        },
+        {
+            "title": "⚡ Activation & Enhancement", 
+            "desc": "**Purpose:** Make proteins work better\n\n• Enzyme activation\n• Stabilize therapeutics\n• Trigger signaling pathways"
+        },
+        {
+            "title": "🎯 Delivery & Targeting",
+            "desc": "**Purpose:** Guide drugs to locations\n\n• Target cancer cells directly\n• Cross blood-brain barrier\n• Organ-specific delivery"
+        },
+        {
+            "title": "🔬 Detection & Diagnostics",
+            "desc": "**Purpose:** Find specific proteins\n\n• COVID rapid tests\n• Cancer screening\n• Pregnancy tests"
+        },
+        {
+            "title": "🔧 Modification & Control",
+            "desc": "**Purpose:** Change protein behavior\n\n• Extend drug half-life\n• Control localization\n• Regulate interactions"
+        },
+        {
+            "title": "✨ Success Story: Insulin",
+            "desc": "**Design binders that:**\n\n• Make insulin last longer\n• Prevent degradation\n• Control receptor binding\n\n*Design in minutes vs months!*"
+        }
+    ]
+    
+    for i, app in enumerate(applications):
+        with app_cols[i % 3]:
+            st.markdown(f"""
+            <div class="app-card">
+                <div class="app-title">{app['title']}</div>
+                <div class="app-desc">{app['desc'].replace(chr(10), '<br>')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")  # Spacing
+    
+    st.markdown("---")
+    
+    # Back button
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("🔙 Back to Workflow", use_container_width=True, type="primary"):
+            st.session_state.show_pipeline = False
+            st.rerun()
+
+
 def initialize_session_state():
     """Initialize session state variables"""
     if 'workflow_session' not in st.session_state:
@@ -1195,6 +1474,16 @@ def render_target_prediction_stage():
     session = st.session_state.workflow_session
     target = session.target
     
+    # Get pipeline (lazy loading) - use GenerativePipeline for better model handling
+    def get_pipeline():
+        if 'pipeline' not in st.session_state:
+            st.session_state.pipeline = GenerativePipeline(
+                session=session,
+                api_key=st.session_state.api_key,
+                output_dir=Path(f"{session.project_name}_output")
+            )
+        return st.session_state.pipeline
+    
     # Show target summary
     st.subheader("Target Summary")
     col1, col2, col3 = st.columns(3)
@@ -1212,26 +1501,125 @@ def render_target_prediction_stage():
         st.info("✅ Structure already available (uploaded PDB)")
         session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.COMPLETED)
     else:
+        # Model selection with enhanced options
+        st.subheader("Structure Prediction Model")
+        
+        # Define models with detailed info
+        model_info = {
+            "AlphaFold3 (Self-hosted)": {
+                "id": "AF3",
+                "speed": "🚀 1-5 min",
+                "accuracy": "⭐⭐⭐⭐⭐",
+                "desc": "Latest DeepMind model - hosted at brevlab.com",
+                "supports_algorithm": False,
+                "supports_diffusion": True
+            },
+            "AlphaFold2": {
+                "id": "AF2",
+                "speed": "🐌 5-10 min",
+                "accuracy": "⭐⭐⭐⭐⭐",
+                "desc": "High accuracy, multiple structure predictions (NVIDIA API)",
+                "supports_algorithm": True,
+                "supports_diffusion": False
+            },
+            "OpenFold3": {
+                "id": "OF3",
+                "speed": "⚡ 2-5 min",
+                "accuracy": "⭐⭐⭐⭐",
+                "desc": "Fast and accurate, good for prototyping (NVIDIA API)",
+                "supports_algorithm": False,
+                "supports_diffusion": False
+            }
+        }
+        
         # Model selection
-        st.subheader("Structure Prediction")
+        col1, col2 = st.columns([2, 1])
         
-        model_options = {name: model for name, model in PROTEIN_MODELS.items()}
-        selected_model_name = st.selectbox(
-            "Select Prediction Model",
-            options=list(model_options.keys()),
-            index=1,  # Default to OpenFold2
-            help="OpenFold2 is faster, AlphaFold2 is more accurate"
-        )
+        with col1:
+            selected_model_name = st.selectbox(
+                "Select Prediction Model",
+                options=list(model_info.keys()),
+                index=0,  # Default to AlphaFold3
+                help="AlphaFold3 is the latest model (self-hosted), AlphaFold2/OpenFold3 use NVIDIA API"
+            )
         
-        selected_model = model_options[selected_model_name]
+        with col2:
+            info = model_info[selected_model_name]
+            st.markdown(f"""
+            **Speed:** {info['speed']}  
+            **Accuracy:** {info['accuracy']}
+            """)
+        
+        st.caption(f"💡 {info['desc']}")
+        
+        # Model-specific options
+        algorithm = "mmseqs2"  # default for AF2
+        num_diffusion_samples = 1  # default for AF3
+        model_seeds = [42]  # default for AF3
+        
+        if info.get("supports_diffusion"):
+            with st.expander("⚙️ AlphaFold3 Options", expanded=False):
+                st.markdown("### Diffusion Sampling Parameters")
+                num_diffusion_samples = st.slider(
+                    "Number of Diffusion Samples",
+                    min_value=1,
+                    max_value=5,
+                    value=1,
+                    help="More samples = better coverage but slower"
+                )
+                seed_input = st.number_input(
+                    "Random Seed",
+                    min_value=1,
+                    max_value=9999,
+                    value=42,
+                    help="Set seed for reproducible results"
+                )
+                model_seeds = [seed_input]
+                
+                st.info("🔬 AlphaFold3 uses diffusion-based structure prediction for improved accuracy on challenging targets.")
+        
+        if info.get("supports_algorithm"):
+            with st.expander("⚙️ Advanced Model Options", expanded=False):
+                st.markdown("### AlphaFold2 MSA Algorithm")
+                algorithm = st.radio(
+                    "MSA Algorithm",
+                    ["mmseqs2", "jackhmmer"],
+                    index=0,
+                    horizontal=True,
+                    help="mmseqs2 is faster, jackhmmer is more sensitive for distant homologs"
+                )
+                
+                st.info("""
+                **mmseqs2** (Recommended): Fast MSA search, works well for most proteins  
+                **jackhmmer**: Slower but more thorough, better for sequences with few homologs
+                """)
+        
+        # Show processing time warning for long sequences
+        if target.sequence and len(target.sequence) > 300:
+            st.warning(f"⚠️ Your sequence has {len(target.sequence)} residues. {selected_model_name} may take longer to process.")
         
         # Predict button
-        if st.button("Predict Structure", type="primary"):
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            predict_clicked = st.button(
+                f"🔬 Predict with {selected_model_name}", 
+                type="primary",
+                use_container_width=True
+            )
+        
+        if predict_clicked:
             if not st.session_state.api_key and not st.session_state.demo_mode:
                 st.error("❌ Please provide an API key or enable Demo Mode")
                 return
             
             session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.IN_PROGRESS)
+            
+            # Show processing info
+            if selected_model_name == "AlphaFold2":
+                st.info("⏳ AlphaFold2 typically takes 5-10 minutes. The model will generate 5 structure predictions ranked by confidence.")
+            
+            if info["id"] == "AF3":
+                st.info("🔬 Connecting to AlphaFold3 server at brevlab.com...")
             
             with st.spinner(f"Predicting structure with {selected_model_name}..."):
                 try:
@@ -1240,51 +1628,105 @@ def render_target_prediction_stage():
                         time.sleep(2)
                         from frontend.app_v2 import generate_mock_pdb
                         pdb_content = generate_mock_pdb(target.sequence)
+                        target.pdb_content = pdb_content
+                        target.structure_predicted = True
+                        target.model_used = selected_model_name
                     else:
-                        # Real prediction
-                        result = call_nvidia_protein_api(
-                            target.sequence,
-                            selected_model["id"],
-                            st.session_state.api_key,
-                            selected_model_name
-                        )
+                        # Use GenerativePipeline for real prediction
+                        pipeline = get_pipeline()
                         
-                        if result["status"] == "success":
-                            pdb_content = extract_pdb_from_response(result["data"])
+                        # Run target prediction via pipeline
+                        # Pass different params based on model type
+                        if info["id"] == "AF3":
+                            success, msg = pipeline.run_target_prediction(
+                                model=info["id"],
+                                num_diffusion_samples=num_diffusion_samples,
+                                model_seeds=model_seeds
+                            )
                         else:
-                            st.error(f"❌ Prediction failed: {result['message']}")
+                            success, msg = pipeline.run_target_prediction(
+                                model=info["id"],
+                                algorithm=algorithm
+                            )
+                        
+                        if not success:
+                            st.error(f"❌ Prediction failed: {msg}")
                             session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.FAILED)
                             return
                     
-                    # Store results
-                    target.pdb_content = pdb_content
-                    target.structure_predicted = True
-                    target.model_used = selected_model_name
-                    
                     session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.COMPLETED)
-                    st.success("Structure prediction completed!")
+                    st.success(f"🎉 Structure prediction completed with {selected_model_name}!")
+                    st.balloons()
+                    time.sleep(1)
                     st.rerun()
                     
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
                     session.update_stage_status(WorkflowStage.TARGET_PREDICTION, StageStatus.FAILED)
     
     # Show structure if available
     if target.pdb_content:
         st.subheader("Target Structure")
+        
+        # Show model info
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Model Used", target.model_used or "Unknown")
+        with col2:
+            if target.confidence_avg:
+                st.metric("Avg Confidence", f"{target.confidence_avg:.1f}")
+            else:
+                st.metric("Structure", "✅ Predicted")
+        with col3:
+            if target.all_structures_pdb:
+                st.metric("Predictions", "5 models (AF2)")
+            else:
+                st.metric("Predictions", "1 model")
+        
+        # If AlphaFold2 returned multiple structures, show selector
+        if target.all_structures_pdb and "MODEL" in target.all_structures_pdb:
+            with st.expander("📊 View All 5 AlphaFold2 Predictions", expanded=False):
+                st.info("AlphaFold2 generates 5 independent structure predictions ranked by confidence. The top-ranked structure is shown by default.")
+                
+                # Parse multiple models from all_structures_pdb
+                models = target.all_structures_pdb.split("ENDMDL")
+                num_models = len([m for m in models if m.strip()])
+                
+                selected_model = st.selectbox(
+                    "Select Model",
+                    options=list(range(1, min(6, num_models + 1))),
+                    format_func=lambda x: f"Model {x} {'(Top Ranked)' if x == 1 else ''}",
+                    help="View different AlphaFold2 structure predictions"
+                )
+                
+                st.caption(f"Showing model {selected_model} of {num_models}")
+        
+        # 3D Visualization
         try:
             html_content = create_3d_visualization(target.pdb_content)
             st.components.v1.html(html_content, height=500)
         except Exception as e:
             st.error(f"Visualization error: {str(e)}")
         
-        # Download button
-        st.download_button(
-            "Download Target PDB",
-            data=target.pdb_content,
-            file_name=f"target_{session.session_id}.pdb",
-            mime="chemical/x-pdb"
-        )
+        # Download buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "📥 Download Target PDB",
+                data=target.pdb_content,
+                file_name=f"target_{session.project_name}.pdb",
+                mime="chemical/x-pdb"
+            )
+        with col2:
+            if target.all_structures_pdb:
+                st.download_button(
+                    "📥 Download All 5 Models",
+                    data=target.all_structures_pdb,
+                    file_name=f"target_{session.project_name}_all_models.pdb",
+                    mime="chemical/x-pdb"
+                )
     
     # Navigation
     col1, col2, col3 = st.columns(3)
@@ -2298,55 +2740,43 @@ def main():
     """Main application"""
     initialize_session_state()
     
+    # Check for navigation from pipeline via query params
+    query_params = st.query_params
+    if 'stage' in query_params:
+        stage_map = {
+            'target_input': WorkflowStage.TARGET_INPUT,
+            'target_prediction': WorkflowStage.TARGET_PREDICTION,
+            'binder_scaffold': WorkflowStage.BINDER_SCAFFOLD_DESIGN,
+            'binder_sequence': WorkflowStage.BINDER_SEQUENCE_DESIGN,
+            'complex_prediction': WorkflowStage.COMPLEX_PREDICTION,
+            'results': WorkflowStage.RESULTS
+        }
+        requested_stage = query_params['stage']
+        if requested_stage in stage_map:
+            st.session_state.workflow_session.advance_to_stage(stage_map[requested_stage])
+            st.session_state.show_pipeline = False
+            # Clear the query param
+            st.query_params.clear()
+            st.rerun()
+    
     # Sidebar
     render_sidebar()
     
-    # Show pipeline HTML if button was clicked
+    # Show pipeline if button was clicked
     if st.session_state.get('show_pipeline', False):
-        pipeline_path = Path(__file__).parent / "pipeline.html"
-        if pipeline_path.exists():
-            with open(pipeline_path, 'r') as f:
-                pipeline_html = f.read()
-            
-            # Add CSS to make iframe fill the main area naturally
-            st.markdown("""
-            <style>
-                /* Remove all padding from main container */
-                .appview-container .main .block-container {
-                    padding: 0 !important;
-                    padding-top: 0 !important;
-                    margin-top: -1rem !important;
-                    max-width: 100% !important;
-                    min-width: 100% !important;
-                }
-                
-                .stMainBlockContainer {
-                    padding: 0 !important;
-                    padding-top: 0 !important;
-                }
-                
-                div[data-testid="stAppViewBlockContainer"] {
-                    padding-top: 0 !important;
-                }
-                
-                /* Make iframe fill available space */
-                .element-container:has(iframe) {
-                    width: 100% !important;
-                    margin-top: 0 !important;
-                }
-                
-                iframe {
-                    width: 100% !important;
-                    height: 100vh !important;
-                    border: none !important;
-                    display: block !important;
-                }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            # Display full screen
-            st.components.v1.html(pipeline_html, height=2000, scrolling=True)
-            return
+        # Use st.components.v1.iframe to load the HTML file from a separate static server
+        # The file is served from http://localhost:8502 (run: python3 -m http.server 8502 in static folder)
+        st.components.v1.iframe(
+            src="http://localhost:8502/pipeline.html",
+            height=2000,
+            scrolling=True
+        )
+        
+        # Back button
+        if st.button("🔙 Back to Workflow", use_container_width=True, type="primary"):
+            st.session_state.show_pipeline = False
+            st.rerun()
+        return
     
     # NVIDIA Branded Header
     st.markdown("""

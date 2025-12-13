@@ -59,22 +59,63 @@ def validate_pdb_content(pdb_content: str) -> dict:
     except Exception as e:
         return {"valid": False, "error": f"PDB validation error: {str(e)}"}
 
-def create_3d_visualization(pdb_content: str, style: str = "cartoon") -> str:
-    """Create 3D molecular visualization using py3Dmol"""
+def create_3d_visualization(pdb_content: str, style: str = "cartoon", show_plddt_legend: bool = True) -> str:
+    """Create 3D molecular visualization using py3Dmol with pLDDT coloring"""
     view_id = "mol_view"
+    
+    # Check if this is AlphaFold output (has B-factor/pLDDT scores)
+    # AlphaFold stores pLDDT in the B-factor column
+    is_alphafold = "ATOM" in pdb_content and any(
+        keyword in pdb_content.upper() 
+        for keyword in ["ALPHAFOLD", "PREDICTED", "MODEL"]
+    )
     
     style_options = {
         "cartoon": {"cartoon": {"color": "spectrum"}},
         "stick": {"stick": {"radius": 0.2}},
         "sphere": {"sphere": {"radius": 1.0}},
         "line": {"line": {"linewidth": 2}},
-        "cartoon+stick": [{"cartoon": {"color": "spectrum"}}, {"stick": {"radius": 0.1}}]
+        "cartoon+stick": [{"cartoon": {"color": "spectrum"}}, {"stick": {"radius": 0.1}}],
+        "plddt": {"cartoon": {"colorscheme": {"prop": "b", "gradient": "roygb", "min": 50, "max": 90}}}
     }
     
     selected_style = style_options.get(style, style_options["cartoon"])
     
+    # Legend HTML for pLDDT scores
+    legend_html = ""
+    if show_plddt_legend:
+        legend_html = """
+        <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(255,255,255,0.95); 
+                    padding: 12px 15px; border-radius: 8px; font-family: Arial, sans-serif; font-size: 12px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; border: 1px solid #e0e0e0;">
+            <div style="font-weight: bold; margin-bottom: 8px; color: #333; font-size: 13px;">
+                pLDDT Confidence
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 14px; background: #0053D6; border-radius: 2px;"></div>
+                    <span style="color: #444;">&gt;90: Very high</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 14px; background: #65CBF3; border-radius: 2px;"></div>
+                    <span style="color: #444;">70-90: Confident</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 14px; background: #FFDB13; border-radius: 2px;"></div>
+                    <span style="color: #444;">50-70: Low</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 20px; height: 14px; background: #FF7D45; border-radius: 2px;"></div>
+                    <span style="color: #444;">&lt;50: Very low</span>
+                </div>
+            </div>
+        </div>
+        """
+    
     html_content = f"""
-    <div id="{view_id}" style="height: 600px; width: 100%; position: relative;"></div>
+    <div id="{view_id}" style="height: 600px; width: 100%; position: relative;">
+        {legend_html}
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/3dmol@latest/build/3Dmol-min.js"></script>
     <script>
     $(document).ready(function() {{
@@ -85,7 +126,21 @@ def create_3d_visualization(pdb_content: str, style: str = "cartoon") -> str:
         let pdbData = `{pdb_content}`;
         
         viewer.addModel(pdbData, "pdb");
-        viewer.setStyle({{}}, {selected_style});
+        
+        // Apply pLDDT coloring using B-factor values (AlphaFold stores pLDDT there)
+        viewer.setStyle({{}}, {{
+            cartoon: {{
+                colorfunc: function(atom) {{
+                    // pLDDT is stored in B-factor column
+                    var plddt = atom.b;
+                    if (plddt > 90) return '#0053D6';      // Dark blue - very high
+                    else if (plddt > 70) return '#65CBF3'; // Light blue - confident  
+                    else if (plddt > 50) return '#FFDB13'; // Yellow - low
+                    else return '#FF7D45';                  // Orange - very low
+                }}
+            }}
+        }});
+        
         viewer.zoomTo();
         viewer.render();
         viewer.zoom(1.2);

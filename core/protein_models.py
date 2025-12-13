@@ -21,3 +21,11 @@ PROTEIN_MODELS = {
         "description": "Boltz2 - Advanced protein structure prediction"
     }
 }
+
+# Self-hosted AlphaFold3 server configuration
+ALPHAFOLD3_SERVER = {
+    "host": "https://alphafold3-zchm9xmih.brevlab.com",
+    "health_endpoint": "/health",
+    "predict_endpoint": "/predict",
+    "description": "Self-hosted AlphaFold3 - Latest DeepMind model"
+}

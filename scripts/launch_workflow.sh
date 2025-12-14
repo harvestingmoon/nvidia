@@ -40,13 +40,20 @@ echo "  ⌨️  Press Ctrl+C to stop the application"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Change to project root directory
+cd "$PROJECT_ROOT"
+
 # Set PYTHONPATH to project root
-export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+export PYTHONPATH="${PYTHONPATH}:${PROJECT_ROOT}"
 
 # Run Streamlit with the workflow app
 streamlit run frontend/binding_workflow_app.py \
     --server.port=8501 \
-    --server.address=localhost \
+    --server.address=0.0.0.0 \
     --browser.gatherUsageStats=false \
     --theme.primaryColor="#1f77b4" \
     --theme.backgroundColor="#ffffff" \

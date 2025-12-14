@@ -53,6 +53,36 @@ NVIDIA_LIGHT_GRAY = "#E5E5E5"
 NVIDIA_WHITE = "#FFFFFF"
 NVIDIA_ACCENT = "#00D4AA"  # Teal accent
 NVIDIA_WARNING = "#FFA500"
+
+
+def check_has_plddt_scores(pdb_content: str) -> bool:
+    """Check if PDB has meaningful pLDDT scores in B-factor column"""
+    if not pdb_content:
+        return False
+    
+    b_factors = []
+    for line in pdb_content.split('\n'):
+        if line.startswith('ATOM'):
+            try:
+                b_factor = float(line[60:66].strip())
+                b_factors.append(b_factor)
+            except (ValueError, IndexError):
+                continue
+    
+    if not b_factors:
+        return False
+    
+    # Check if B-factors look like pLDDT scores (0-100 range with variation)
+    min_b = min(b_factors)
+    max_b = max(b_factors)
+    avg_b = sum(b_factors) / len(b_factors)
+    
+    # pLDDT scores are typically 0-100 with meaningful variation
+    has_variation = (max_b - min_b) > 5
+    in_plddt_range = 0 <= min_b <= 100 and 0 <= max_b <= 100
+    reasonable_avg = 20 <= avg_b <= 100
+    
+    return has_variation and in_plddt_range and reasonable_avg
 NVIDIA_ERROR = "#FF3838"
 
 # Custom CSS with NVIDIA Design System
@@ -1094,10 +1124,23 @@ def load_pipeline_results(session: WorkflowSession, folder_path: str) -> bool:
         elif '_OF3_output' in folder_name:
             project_name = folder_name.replace('_OF3_output', '')
             model_used = 'OpenFold3'
+        elif '_AF3_output' in folder_name:
+            project_name = folder_name.replace('_AF3_output', '')
+            model_used = 'AlphaFold3'
         else:
-            # Try to infer from files
+            # Try to infer from files in folder
             project_name = folder_name.replace('_output', '')
-            model_used = 'Unknown'
+            # Check file names for model hints
+            files_in_folder = os.listdir(folder_path)
+            files_str = ' '.join(files_in_folder).lower()
+            if 'af2' in files_str or 'alphafold2' in files_str:
+                model_used = 'AlphaFold2'
+            elif 'of3' in files_str or 'openfold' in files_str:
+                model_used = 'OpenFold3'
+            elif 'af3' in files_str or 'alphafold3' in files_str:
+                model_used = 'AlphaFold3'
+            else:
+                model_used = 'Uploaded PDB'
         
         # Load target structure (Step 1)
         target_pdb = os.path.join(folder_path, f"{project_name}_first_structure.pdb")
@@ -1106,7 +1149,7 @@ def load_pipeline_results(session: WorkflowSession, folder_path: str) -> bool:
                 session.target.pdb_content = f.read()
             session.target.structure_predicted = True
             session.target.structure_file_path = target_pdb
-            session.target.prediction_model = model_used
+            session.target.model_used = model_used
             
             # Extract sequence from PDB
             from workflow.binding_analysis import parse_pdb_content
@@ -1303,6 +1346,9 @@ def render_target_input_stage():
                 elif '_OF3_output' in folder_name:
                     project = folder_name.replace('_OF3_output', '')
                     display = f"{project} (OpenFold3)"
+                elif '_AF3_output' in folder_name:
+                    project = folder_name.replace('_AF3_output', '')
+                    display = f"{project} (AlphaFold3)"
                 else:
                     project = folder_name.replace('_output', '')
                     display = f"{project}"
@@ -1405,6 +1451,7 @@ def render_target_input_stage():
             pdb_content = uploaded_file.read().decode('utf-8')
             target.pdb_content = pdb_content
             target.structure_predicted = True
+            target.model_used = "Uploaded PDB"
             st.success("✅ PDB file loaded successfully")
             
             # Extract sequence from PDB
@@ -1703,10 +1750,11 @@ def render_target_prediction_stage():
                 
                 st.caption(f"Showing model {selected_model} of {num_models}")
         
-        # 3D Visualization
+        # 3D Visualization with pLDDT coloring and vertical legend bar
         try:
-            html_content = create_3d_visualization(target.pdb_content)
-            st.components.v1.html(html_content, height=500)
+            has_plddt = check_has_plddt_scores(target.pdb_content)
+            html_content = create_3d_visualization(target.pdb_content, color_by_plddt=has_plddt)
+            st.components.v1.html(html_content, height=620)
         except Exception as e:
             st.error(f"Visualization error: {str(e)}")
         
@@ -1778,17 +1826,49 @@ def render_binder_scaffold_stage():
     with col3:
         st.metric("Structure", "✅ Available" if session.target.pdb_content else "❌ Missing")
     
+    # Extract available residues from target PDB for hotspot guidance
+    available_residues = {}
+    if session.target.pdb_content:
+        from workflow.generative_pipeline import extract_residues_from_pdb
+        available_residues = extract_residues_from_pdb(session.target.pdb_content)
+    
     # RFDiffusion parameters
     st.subheader("RFDiffusion Parameters")
     
     col1, col2 = st.columns(2)
     
     with col1:
+        # Show available residue ranges to help with contigs
+        default_contigs = "A1-25/0 70-100"  # Fallback default
+        if available_residues:
+            residue_info = ", ".join([f"Chain {chain}: {min(nums)}-{max(nums)}" for chain, nums in available_residues.items()])
+            st.caption(f"📊 Available residues: {residue_info}")
+            
+            # Generate a valid default contigs based on actual PDB residues
+            for chain, nums in available_residues.items():
+                if len(nums) >= 10:
+                    min_res = min(nums)
+                    # Use first 25 residues or fewer if chain is shorter
+                    end_res = min(min_res + 24, max(nums))
+                    default_contigs = f"{chain}{min_res}-{end_res}/0 70-100"
+                    break
+        
+        # Use stored value if available, otherwise use computed default
+        stored_contigs = binder.rfdiffusion_params.get("contigs", "")
         contigs = st.text_input(
             "Contigs Specification",
-            value=binder.rfdiffusion_params.get("contigs", "A1-25/0 70-100"),
+            value=stored_contigs if stored_contigs else default_contigs,
             help="Format: A1-25/0 70-100 means keep residues 1-25 from target, add 70-100 new residues for binder"
         )
+        
+        # Validate contigs in real-time
+        if available_residues and contigs:
+            from workflow.generative_pipeline import validate_and_fix_contigs
+            fixed, warnings = validate_and_fix_contigs(session.target.pdb_content, contigs)
+            if warnings:
+                st.warning(f"⚠️ {'; '.join(warnings)}")
+                if fixed != contigs:
+                    st.info(f"💡 Suggested fix: `{fixed}`")
         
         diffusion_steps = st.slider(
             "Diffusion Steps",
@@ -1799,14 +1879,33 @@ def render_binder_scaffold_stage():
         )
     
     with col2:
+        # Show example hotspots based on actual available residues
+        example_hotspots = ""
+        if available_residues:
+            for chain, nums in available_residues.items():
+                if len(nums) >= 4:
+                    # Pick some residues from the middle of the chain
+                    mid = len(nums) // 2
+                    example_hotspots = f"{chain}{nums[mid]}, {chain}{nums[mid+1]}, {chain}{nums[mid+2]}"
+                    break
+        
         hotspot_input = st.text_input(
             "Binding Hotspot Residues (optional)",
             value=", ".join(binder.rfdiffusion_params.get("hotspot_res", [])) if binder.rfdiffusion_params.get("hotspot_res") else "",
-            placeholder="e.g., A14, A15, A17, A18",
-            help="Specify target residues that must be in the binding interface"
+            placeholder=f"e.g., {example_hotspots}" if example_hotspots else "e.g., A14, A15, A17",
+            help="Specify target residues that must be in the binding interface. Format: ChainResidue (e.g., A14)"
         )
         
         hotspots = [h.strip() for h in hotspot_input.split(",") if h.strip()] if hotspot_input else None
+        
+        # Validate hotspots if entered
+        if hotspots and session.target.pdb_content:
+            from workflow.generative_pipeline import validate_hotspot_residues
+            valid, invalid = validate_hotspot_residues(session.target.pdb_content, hotspots)
+            if invalid:
+                st.warning(f"⚠️ Invalid residues: {', '.join(invalid)}")
+            if valid:
+                st.success(f"✅ Valid hotspots: {', '.join(valid)}")
     
     # Check if stage is completed (view-only mode)
     stage_status = session.stage_statuses.get(WorkflowStage.BINDER_SCAFFOLD_DESIGN.value)
@@ -2050,8 +2149,30 @@ def render_complex_prediction_stage():
     with col4:
         st.metric("Complex", "✅ Predicted" if complex_data.complex_pdb else "Not predicted")
     
-    # AlphaFold-Multimer parameters
-    st.subheader("AlphaFold-Multimer Parameters")
+    # Complex Prediction Parameters
+    st.subheader("Complex Prediction Parameters")
+    
+    # Model selection - AF2-Multimer vs AF3
+    complex_model_options = {
+        "alphafold2_multimer": {
+            "name": "🔬 AlphaFold2-Multimer",
+            "desc": "NVIDIA BioNeMo API - optimized for protein complexes"
+        },
+        "alphafold3": {
+            "name": "🧬 AlphaFold3",
+            "desc": "Latest DeepMind model - hosted at brevlab.com"
+        }
+    }
+    
+    selected_complex_model = st.radio(
+        "Select Model",
+        options=list(complex_model_options.keys()),
+        format_func=lambda x: complex_model_options[x]["name"],
+        horizontal=True,
+        help="Choose which model to use for complex structure prediction"
+    )
+    
+    st.caption(f"*{complex_model_options[selected_complex_model]['desc']}*")
     
     col1, col2 = st.columns(2)
     
@@ -2065,12 +2186,16 @@ def render_complex_prediction_stage():
         )
     
     with col2:
-        selected_models = st.multiselect(
-            "AlphaFold Models",
-            options=[1, 2, 3, 4, 5],
-            default=[1],
-            help="Which AF-Multimer models to use (more = slower but more accurate)"
-        )
+        if selected_complex_model == "alphafold2_multimer":
+            selected_models = st.multiselect(
+                "AlphaFold2 Models",
+                options=[1, 2, 3, 4, 5],
+                default=[1],
+                help="Which AF-Multimer models to use (more = slower but more accurate)"
+            )
+        else:
+            st.info("AlphaFold3 uses a single unified model")
+            selected_models = [1]  # Placeholder for AF3
     
     # Display existing complex
     if complex_data.complex_pdb:
@@ -2117,27 +2242,33 @@ def render_complex_prediction_stage():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
+            model_display_name = "AlphaFold3" if selected_complex_model == "alphafold3" else "AlphaFold2-Multimer"
             if num_candidates > 1:
-                button_label = f"Predict {num_candidates} Complexes"
+                button_label = f"Predict {num_candidates} Complexes with {model_display_name}"
             else:
-                button_label = "Predict Complex"
+                button_label = f"Predict Complex with {model_display_name}"
             
             if st.button(button_label, type="primary", use_container_width=True):
                 pipeline = get_pipeline()
                 
                 # Show debug info
-                st.info(f"Debug: Running AlphaFold-Multimer for {num_candidates} candidate(s)... Check your terminal for detailed logs!")
+                if selected_complex_model == "alphafold3":
+                    st.info(f"🧬 Connecting to AlphaFold3 server at brevlab.com...")
+                else:
+                    st.info(f"🔬 Running AlphaFold2-Multimer for {num_candidates} candidate(s)...")
                 
-                with st.spinner(f"Running AlphaFold-Multimer for {num_candidates} candidate(s)... This will take several minutes..."):
+                with st.spinner(f"Running {model_display_name} for {num_candidates} candidate(s)... This will take several minutes..."):
                     if num_candidates > 1:
                         success, msg = pipeline.run_batch_complex_prediction(
                             num_candidates=num_candidates,
-                            selected_models=selected_models
+                            selected_models=selected_models,
+                            model_type=selected_complex_model
                         )
                     else:
                         success, msg = pipeline.run_complex_prediction(
                             sequence_idx=binder.selected_sequence_idx,
-                            selected_models=selected_models
+                            selected_models=selected_models,
+                            model_type=selected_complex_model
                         )
                     
                     if success:
@@ -2391,7 +2522,7 @@ def render_analysis_results(session: WorkflowSession):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Quality Score", f"{complex_data.quality_score}/100")
+        st.metric("pLDDT Score", f"{complex_data.plddt_score or complex_data.quality_score or 0:.1f}")
     with col2:
         st.metric("Grade", complex_data.quality_grade)
     with col3:
@@ -2458,11 +2589,12 @@ def render_results_dashboard(session: WorkflowSession):
         "🟡" if quality_score >= 50 else "🔴"
     )
     
+    plddt_display = complex_data.plddt_score or quality_score
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #76B900 0%, #00D4AA 100%); padding: 30px; border-radius: 15px; color: white; margin-bottom: 30px;">
         <h1 style="margin: 0; font-size: 36px;">✅ Workflow Complete</h1>
         <p style="margin: 10px 0 0 0; font-size: 18px; opacity: 0.9;">
-            Project: {session.project_name} | Status: {recommendation_color} Quality Score: {quality_score}/100
+            Project: {session.project_name} | Status: {recommendation_color} pLDDT Score: {plddt_display:.1f}
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -2482,7 +2614,8 @@ def render_results_dashboard(session: WorkflowSession):
         st.caption(f"Completed: {completed_count}/6")
     
     with col3:
-        st.metric("Overall Quality", f"{quality_score}/100")
+        plddt_val = complex_data.plddt_score or quality_score
+        st.metric("pLDDT Score", f"{plddt_val:.1f}")
         st.caption(f"Grade: {complex_data.quality_grade or 'N/A'}")
     
     st.markdown("---")
@@ -2551,7 +2684,8 @@ def render_results_dashboard(session: WorkflowSession):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Quality Score", f"{quality_score}/100", delta=complex_data.quality_grade)
+        plddt_val = complex_data.plddt_score or quality_score
+        st.metric("pLDDT Score", f"{plddt_val:.1f}", delta=complex_data.quality_grade)
     
     with col2:
         st.metric("Interface Contacts", complex_data.num_contacts or 0)
@@ -2764,13 +2898,14 @@ def main():
     
     # Show pipeline if button was clicked
     if st.session_state.get('show_pipeline', False):
-        # Use st.components.v1.iframe to load the HTML file from a separate static server
-        # The file is served from http://localhost:8502 (run: python3 -m http.server 8502 in static folder)
-        st.components.v1.iframe(
-            src="http://localhost:8502/pipeline.html",
-            height=2000,
-            scrolling=True
-        )
+        # Read and embed the HTML file directly using st.components.v1.html()
+        pipeline_path = Path(__file__).parent / "pipeline.html"
+        if pipeline_path.exists():
+            with open(pipeline_path, 'r', encoding='utf-8') as f:
+                pipeline_html = f.read()
+            st.components.v1.html(pipeline_html, height=2500, scrolling=True)
+        else:
+            st.error("Pipeline diagram not found.")
         
         # Back button
         if st.button("🔙 Back to Workflow", use_container_width=True, type="primary"):

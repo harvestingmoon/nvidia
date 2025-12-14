@@ -537,77 +537,718 @@ def validate_pdb_content(pdb_content: str) -> dict:
 
 def create_3d_visualization(
     pdb_content: str,
-    vmin: float = 50.0,   # lower bound of pLDDT range for color scale
-    vmax: float = 90.0    # upper bound of pLDDT range for color scale
+    vmin: float = 0.0,    # lower bound of pLDDT range for color scale
+    vmax: float = 100.0,  # upper bound of pLDDT range for color scale
+    color_by_plddt: bool = None  # None = auto-detect
 ) -> str:
     """
     Create a 3D molecular visualization using py3Dmol, colored by pLDDT
-    (stored in the B-factor column, as in AlphaFold outputs), and append
-    an AlphaFold-style pLDDT legend. Returns HTML string.
+    (stored in the B-factor column, as in AlphaFold outputs).
+    Returns HTML string with vertical color bar legend.
     """
     try:
-        viewer = py3Dmol.view(width=800, height=600)
-        viewer.addModel(pdb_content, 'pdb')
-
-        # AlphaFold-style: color by B-factor (pLDDT) with a blue↔red gradient
-        viewer.setStyle({
-            "cartoon": {
-                "colorscheme": {
-                    "prop": "b",          # use B-factor as property (pLDDT)
-                    "gradient": "roygb",  # red–orange–yellow–green–blue
-                    "min": vmin,
-                    "max": vmax
-                }
-            }
-        })
-
-        viewer.zoomTo()
-        viewer.spin(True)
-
-        html = viewer._make_html()
-
-        # Legend: approximate AlphaFold color categories
-        legend_html = f"""
-<div style="font-family: sans-serif; margin-top: 10px;">
-  <b>pLDDT confidence (B-factor)</b>
-  <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 13px;">
-    <div>
-      <span style="display:inline-block;width:14px;height:14px;
-                   background:#0053D6;margin-right:4px;border-radius:2px;"></span>
-      Very high (90-100)
-    </div>
-    <div>
-      <span style="display:inline-block;width:14px;height:14px;
-                   background:#4AA3D6;margin-right:4px;border-radius:2px;"></span>
-      Confident (70-90)
-    </div>
-    <div>
-      <span style="display:inline-block;width:14px;height:14px;
-                   background:#FFC800;margin-right:4px;border-radius:2px;"></span>
-      Low (50-70)
-    </div>
-    <div>
-      <span style="display:inline-block;width:14px;height:14px;
-                   background:#FF7D45;margin-right:4px;border-radius:2px;"></span>
-      Very low (&lt;50)
-    </div>
-  </div>
-  <div style="margin-top:6px;font-size:11px;color:#555;">
-    Colored by B-factor (pLDDT). Adjust vmin={vmin} / vmax={vmax} in this function if needed.
-  </div>
-</div>
-"""
-
-        if "</body>" in html:
-            html = html.replace("</body>", legend_html + "</body>")
+        # Auto-detect if pLDDT coloring should be used
+        if color_by_plddt is None:
+            # Check if B-factors look like pLDDT scores
+            b_factors = []
+            for line in pdb_content.split('\n'):
+                if line.startswith('ATOM'):
+                    try:
+                        b_factor = float(line[60:66].strip())
+                        b_factors.append(b_factor)
+                    except (ValueError, IndexError):
+                        continue
+            
+            if b_factors:
+                min_b = min(b_factors)
+                max_b = max(b_factors)
+                avg_b = sum(b_factors) / len(b_factors)
+                has_variation = (max_b - min_b) > 5
+                in_plddt_range = 0 <= min_b <= 100 and 0 <= max_b <= 100
+                reasonable_avg = 20 <= avg_b <= 100
+                color_by_plddt = has_variation and in_plddt_range and reasonable_avg
+            else:
+                color_by_plddt = False
+        
+        # Build custom HTML with 3Dmol viewer and vertical color bar
+        import random
+        view_id = f"viewer_{random.randint(1000, 9999)}"
+        
+        # Escape backticks in PDB content for JavaScript
+        pdb_escaped = pdb_content.replace('`', '\\`').replace('${', '\\${')
+        
+        if color_by_plddt:
+            style_js = """
+                viewer.setStyle({}, {
+                    cartoon: {
+                        colorfunc: function(atom) {
+                            var plddt = atom.b;
+                            // AlphaFold-style coloring: purple (low) -> blue -> green -> yellow (high)
+                            if (plddt >= 90) {
+                                // Yellow to light yellow (90-100)
+                                return 'rgb(255, 255, 0)';
+                            } else if (plddt >= 70) {
+                                // Green to yellow-green (70-90)
+                                var t = (plddt - 70) / 20;
+                                var r = Math.round(100 + 155 * t);
+                                var g = Math.round(200 + 55 * t);
+                                var b = Math.round(50 * (1 - t));
+                                return 'rgb(' + r + ',' + g + ',' + b + ')';
+                            } else if (plddt >= 50) {
+                                // Cyan/teal to green (50-70)
+                                var t = (plddt - 50) / 20;
+                                var r = Math.round(50 + 50 * t);
+                                var g = Math.round(180 + 20 * t);
+                                var b = Math.round(150 - 100 * t);
+                                return 'rgb(' + r + ',' + g + ',' + b + ')';
+                            } else {
+                                // Purple/blue to cyan (0-50)
+                                var t = plddt / 50;
+                                var r = Math.round(80 - 30 * t);
+                                var g = Math.round(50 + 130 * t);
+                                var b = Math.round(150);
+                                return 'rgb(' + r + ',' + g + ',' + b + ')';
+                            }
+                        }
+                    }
+                });
+            """
+            legend_html = """
+            <div style="
+                position: absolute;
+                right: 20px;
+                top: 50%;
+                transform: translateY(-50%);
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 8px;
+                font-family: Arial, sans-serif;
+            ">
+                <div style="
+                    width: 25px;
+                    height: 300px;
+                    background: linear-gradient(to bottom, 
+                        #FFFF00 0%,
+                        #90EE90 25%,
+                        #32CD9A 50%,
+                        #4682B4 75%,
+                        #483D8B 100%
+                    );
+                    border-radius: 4px;
+                    border: 1px solid #ccc;
+                "></div>
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    height: 300px;
+                    font-size: 12px;
+                    color: #333;
+                ">
+                    <span style="font-weight: bold;">100</span>
+                    <span>90</span>
+                    <span>70</span>
+                    <span>50</span>
+                    <span style="font-weight: bold;">0</span>
+                </div>
+                <div style="
+                    writing-mode: vertical-rl;
+                    text-orientation: mixed;
+                    transform: rotate(180deg);
+                    font-size: 11px;
+                    color: #555;
+                    letter-spacing: 1px;
+                ">Prediction Score (pLDDT)</div>
+            </div>
+            """
         else:
-            html += legend_html
-
+            style_js = """
+                viewer.setStyle({}, {
+                    cartoon: { color: 'spectrum' }
+                });
+            """
+            legend_html = """
+            <div style="
+                position: absolute;
+                right: 20px;
+                top: 50%;
+                transform: translateY(-50%);
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 8px;
+                font-family: Arial, sans-serif;
+            ">
+                <div style="
+                    width: 25px;
+                    height: 300px;
+                    background: linear-gradient(to bottom, 
+                        #FF0000 0%,
+                        #FF8000 12.5%,
+                        #FFFF00 25%,
+                        #80FF00 37.5%,
+                        #00FF00 50%,
+                        #00FF80 62.5%,
+                        #00FFFF 75%,
+                        #0080FF 87.5%,
+                        #0000FF 100%
+                    );
+                    border-radius: 4px;
+                    border: 1px solid #ccc;
+                "></div>
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    height: 300px;
+                    font-size: 12px;
+                    color: #333;
+                ">
+                    <span style="font-weight: bold;">N-term</span>
+                    <span></span>
+                    <span style="color: #888;">Middle</span>
+                    <span></span>
+                    <span style="font-weight: bold;">C-term</span>
+                </div>
+                <div style="
+                    writing-mode: vertical-rl;
+                    text-orientation: mixed;
+                    transform: rotate(180deg);
+                    font-size: 11px;
+                    color: #555;
+                    letter-spacing: 1px;
+                ">Residue Position</div>
+            </div>
+            """
+        
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://3dmol.org/build/3Dmol-min.js"></script>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ background: #fff; overflow: hidden; }}
+        .container {{ position: relative; width: 100%; height: 600px; }}
+        #{view_id} {{ width: 100%; height: 100%; }}
+        .atom-label {{
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            pointer-events: none;
+        }}
+        .controls {{
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            z-index: 100;
+        }}
+        .ctrl-btn {{
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }}
+        .ctrl-btn:hover {{
+            background: #f0f0f0;
+        }}
+        .ctrl-btn.active {{
+            background: #76B900;
+            color: white;
+            border-color: #76B900;
+        }}
+        .info-panel {{
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-width: 300px;
+            display: none;
+            z-index: 100;
+        }}
+        .info-panel.visible {{
+            display: block;
+        }}
+        .info-title {{
+            color: #76B900;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <button class="ctrl-btn" id="spin-btn" title="Toggle Spin">
+                🔄 <span id="spin-text">Spin: ON</span>
+            </button>
+            <button class="ctrl-btn" id="style-btn" title="Toggle Style">
+                🎨 <span id="style-text">Cartoon</span>
+            </button>
+            <button class="ctrl-btn" id="click-btn" title="Click Mode">
+                👆 <span id="click-text">Click: Inspect</span>
+            </button>
+            <button class="ctrl-btn" id="reset-btn" title="Reset View">
+                🔍 <span>Reset View</span>
+            </button>
+        </div>
+        <div id="{view_id}"></div>
+        <div class="info-panel" id="info-panel">
+            <div class="info-title">Residue Info</div>
+            <div id="info-content">Click on a residue to see details</div>
+        </div>
+        {legend_html}
+    </div>
+    <script>
+        $(document).ready(function() {{
+            let viewer = $3Dmol.createViewer("{view_id}", {{
+                backgroundColor: 'white'
+            }});
+            
+            let pdbData = `{pdb_escaped}`;
+            let model = viewer.addModel(pdbData, "pdb");
+            
+            // State variables
+            var spinning = true;
+            var currentStyle = 'cartoon';
+            var selectedResidue = null;
+            var clickMode = 'inspect';
+            
+            // Amino acid 3-letter to full name
+            var aaNames = {{
+                'ALA': 'Alanine', 'ARG': 'Arginine', 'ASN': 'Asparagine', 'ASP': 'Aspartic Acid',
+                'CYS': 'Cysteine', 'GLU': 'Glutamic Acid', 'GLN': 'Glutamine', 'GLY': 'Glycine',
+                'HIS': 'Histidine', 'ILE': 'Isoleucine', 'LEU': 'Leucine', 'LYS': 'Lysine',
+                'MET': 'Methionine', 'PHE': 'Phenylalanine', 'PRO': 'Proline', 'SER': 'Serine',
+                'THR': 'Threonine', 'TRP': 'Tryptophan', 'TYR': 'Tyrosine', 'VAL': 'Valine'
+            }};
+            
+            // Number of neighboring residues to show on each side
+            var neighborRadius = 5;
+            
+            // Custom color scheme: green carbons, red oxygens, blue nitrogens, yellow sulfur
+            var elementColors = {{
+                'C': '#20B2AA',   // Light sea green / teal for carbons
+                'N': '#0000FF',   // Blue for nitrogens
+                'O': '#FF0000',   // Red for oxygens
+                'S': '#FFFF00',   // Yellow for sulfur
+                'H': '#FFFFFF',   // White for hydrogens
+                'P': '#FFA500'    // Orange for phosphorus
+            }};
+            
+            // Apply initial style
+            function applyStyle() {{
+                viewer.setStyle({{}}, {{}});
+                
+                if (currentStyle === 'cartoon') {{
+                    {style_js}
+                }} else if (currentStyle === 'stick') {{
+                    viewer.setStyle({{}}, {{
+                        stick: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            radius: 0.15 
+                        }},
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            scale: 0.25 
+                        }}
+                    }});
+                }} else if (currentStyle === 'sphere') {{
+                    viewer.setStyle({{}}, {{
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }}
+                        }}
+                    }});
+                }}
+                
+                // Re-highlight selected residue region if any
+                if (selectedResidue) {{
+                    highlightRegion(selectedResidue.chain, selectedResidue.resi);
+                }}
+                
+                viewer.render();
+            }}
+            
+            // Find and display hydrogen bonds in a region
+            function showHydrogenBonds(chain, centerResi, radius) {{
+                var startResi = Math.max(1, centerResi - radius);
+                var endResi = centerResi + radius;
+                
+                // Get all atoms in the region - use a broader selection
+                var atoms = model.selectedAtoms({{}});
+                var regionAtoms = atoms.filter(function(a) {{
+                    return a.chain === chain && a.resi >= startResi && a.resi <= endResi;
+                }});
+                
+                // Find potential H-bond donors (N) and acceptors (O)
+                var donors = [];
+                var acceptors = [];
+                
+                regionAtoms.forEach(function(atom) {{
+                    // Backbone N is donor, backbone O is acceptor
+                    if (atom.atom === 'N') {{
+                        donors.push(atom);
+                    }}
+                    if (atom.atom === 'O') {{
+                        acceptors.push(atom);
+                    }}
+                }});
+                
+                // Check for H-bonds (distance between 2.5 and 3.5 Å)
+                donors.forEach(function(donor) {{
+                    acceptors.forEach(function(acceptor) {{
+                        // Don't bond to self or adjacent residues (i, i+1)
+                        var resiDiff = Math.abs(donor.resi - acceptor.resi);
+                        if (resiDiff < 2) return;
+                        
+                        var dx = donor.x - acceptor.x;
+                        var dy = donor.y - acceptor.y;
+                        var dz = donor.z - acceptor.z;
+                        var dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        
+                        // H-bond distance typically 2.5-3.5 Å
+                        if (dist >= 2.5 && dist <= 3.5) {{
+                            // Create dashed line by drawing multiple small cylinders
+                            var numDashes = 8;
+                            var dashFraction = 0.6;  // portion of segment that is visible
+                            
+                            for (var i = 0; i < numDashes; i++) {{
+                                var t1 = i / numDashes;
+                                var t2 = (i + dashFraction) / numDashes;
+                                
+                                var x1 = donor.x + t1 * (acceptor.x - donor.x);
+                                var y1 = donor.y + t1 * (acceptor.y - donor.y);
+                                var z1 = donor.z + t1 * (acceptor.z - donor.z);
+                                
+                                var x2 = donor.x + t2 * (acceptor.x - donor.x);
+                                var y2 = donor.y + t2 * (acceptor.y - donor.y);
+                                var z2 = donor.z + t2 * (acceptor.z - donor.z);
+                                
+                                viewer.addCylinder({{
+                                    start: {{x: x1, y: y1, z: z1}},
+                                    end: {{x: x2, y: y2, z: z2}},
+                                    radius: 0.04,
+                                    color: '#00BFFF',
+                                    fromCap: 1,
+                                    toCap: 1
+                                }});
+                            }}
+                        }}
+                    }});
+                }});
+            }}
+            
+            // Highlight a region around the clicked residue (±neighborRadius residues)
+            function highlightRegion(chain, centerResi) {{
+                var startResi = Math.max(1, centerResi - neighborRadius);
+                var endResi = centerResi + neighborRadius;
+                
+                // Add ball-and-stick style for all residues in the region with element colors
+                for (var r = startResi; r <= endResi; r++) {{
+                    viewer.addStyle({{chain: chain, resi: r}}, {{
+                        stick: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            radius: 0.15 
+                        }},
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            scale: 0.25 
+                        }}
+                    }});
+                }}
+                
+                // Highlight the clicked residue with a stronger style and pink outline effect
+                viewer.addStyle({{chain: chain, resi: centerResi}}, {{
+                    stick: {{ 
+                        colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                        radius: 0.25 
+                    }},
+                    sphere: {{ 
+                        colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                        scale: 0.35 
+                    }}
+                }});
+                
+                // Show hydrogen bonds in the region
+                showHydrogenBonds(chain, centerResi, neighborRadius);
+                
+                // Add label only to the center (clicked) residue
+                viewer.addLabel(chain + centerResi, {{
+                    position: {{x: 0, y: 0, z: 0}},
+                    backgroundOpacity: 0.8,
+                    backgroundColor: 'black',
+                    fontColor: 'white',
+                    fontSize: 12
+                }}, {{chain: chain, resi: centerResi, atom: 'CA'}});
+                
+                // Zoom camera to the selected region
+                viewer.zoomTo({{chain: chain, resi: [startResi, endResi]}}, 800);  // 800ms animation
+                
+                viewer.render();
+            }}
+            
+            // Clear highlight - reset to base style without any ball-and-stick
+            function clearHighlight() {{
+                viewer.removeAllShapes();  // Remove H-bond lines
+                viewer.removeAllLabels();
+                
+                // Completely reset all styles to base
+                viewer.setStyle({{}}, {{}});
+                
+                if (currentStyle === 'cartoon') {{
+                    {style_js}
+                }} else if (currentStyle === 'stick') {{
+                    viewer.setStyle({{}}, {{
+                        stick: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            radius: 0.15 
+                        }},
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            scale: 0.25 
+                        }}
+                    }});
+                }} else if (currentStyle === 'sphere') {{
+                    viewer.setStyle({{}}, {{
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }}
+                        }}
+                    }});
+                }}
+                
+                viewer.render();
+            }}
+            
+            applyStyle();
+            viewer.zoomTo();
+            viewer.render();
+            
+            // Spin animation
+            function spin() {{
+                if (spinning) {{
+                    viewer.rotate(0.5, {{x: 0, y: 1, z: 0}});
+                    viewer.render();
+                }}
+                requestAnimationFrame(spin);
+            }}
+            spin();
+            
+            // Spin toggle
+            $('#spin-btn').click(function() {{
+                spinning = !spinning;
+                $(this).toggleClass('active', spinning);
+                $('#spin-text').text(spinning ? 'Spin: ON' : 'Spin: OFF');
+            }});
+            
+            // Style toggle
+            $('#style-btn').click(function() {{
+                var styles = ['cartoon', 'stick', 'sphere'];
+                var idx = styles.indexOf(currentStyle);
+                currentStyle = styles[(idx + 1) % styles.length];
+                $('#style-text').text(currentStyle.charAt(0).toUpperCase() + currentStyle.slice(1));
+                selectedResidue = null;
+                clearHighlight();
+                applyStyle();
+            }});
+            
+            // Click mode toggle
+            $('#click-btn').click(function() {{
+                $(this).toggleClass('active');
+                if ($(this).hasClass('active')) {{
+                    $('#click-text').text('Click: Active');
+                    $('#info-panel').addClass('visible');
+                }} else {{
+                    $('#click-text').text('Click: Inspect');
+                    $('#info-panel').removeClass('visible');
+                    // Clear selection FIRST, then clear highlight
+                    selectedResidue = null;
+                    viewer.removeAllShapes();  // Remove H-bond lines
+                    viewer.removeAllLabels();
+                    // Re-apply base style without any highlight
+                    viewer.setStyle({{}}, {{}});
+                    if (currentStyle === 'cartoon') {{
+                        {style_js}
+                    }} else if (currentStyle === 'stick') {{
+                        viewer.setStyle({{}}, {{
+                            stick: {{ 
+                                colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                                radius: 0.15 
+                            }},
+                            sphere: {{ 
+                                colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                                scale: 0.25 
+                            }}
+                        }});
+                    }} else if (currentStyle === 'sphere') {{
+                        viewer.setStyle({{}}, {{
+                            sphere: {{ 
+                                colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }}
+                            }}
+                        }});
+                    }}
+                    // Reset view to show full structure
+                    viewer.zoomTo({{}}, 500);
+                    viewer.render();
+                }}
+            }});
+            
+            // Reset view button
+            $('#reset-btn').click(function() {{
+                selectedResidue = null;
+                viewer.removeAllShapes();
+                viewer.removeAllLabels();
+                viewer.setStyle({{}}, {{}});
+                if (currentStyle === 'cartoon') {{
+                    {style_js}
+                }} else if (currentStyle === 'stick') {{
+                    viewer.setStyle({{}}, {{
+                        stick: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            radius: 0.15 
+                        }},
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }},
+                            scale: 0.25 
+                        }}
+                    }});
+                }} else if (currentStyle === 'sphere') {{
+                    viewer.setStyle({{}}, {{
+                        sphere: {{ 
+                            colorfunc: function(atom) {{ return elementColors[atom.elem] || '#808080'; }}
+                        }}
+                    }});
+                }}
+                // Deactivate inspect mode if active
+                $('#click-btn').removeClass('active');
+                $('#click-text').text('Click: Inspect');
+                $('#info-panel').removeClass('visible');
+                // Zoom to full structure
+                viewer.zoomTo({{}}, 500);
+                viewer.render();
+            }});
+            
+            // Click on atom to show details
+            viewer.setClickable({{}}, true, function(atom) {{
+                if (!$('#click-btn').hasClass('active')) {{
+                    // Just toggle spin if not in click mode
+                    spinning = !spinning;
+                    $('#spin-btn').toggleClass('active', spinning);
+                    $('#spin-text').text(spinning ? 'Spin: ON' : 'Spin: OFF');
+                    return;
+                }}
+                
+                // Clear previous selection
+                clearHighlight();
+                
+                // Store selection
+                selectedResidue = {{
+                    chain: atom.chain,
+                    resi: atom.resi
+                }};
+                
+                // Highlight the region around the clicked residue
+                highlightRegion(atom.chain, atom.resi);
+                
+                // Get pLDDT from B-factor
+                var plddt = atom.b ? atom.b.toFixed(1) : 'N/A';
+                var aaFullName = aaNames[atom.resn] || atom.resn;
+                
+                // Update info panel
+                var info = '<b>Residue:</b> ' + atom.resn + ' ' + atom.resi + ' (Chain ' + atom.chain + ')<br>';
+                info += '<b>Full Name:</b> ' + aaFullName + '<br>';
+                info += '<b>Atom:</b> ' + atom.atom + '<br>';
+                info += '<b>pLDDT:</b> ' + plddt + '<br>';
+                info += '<b>Coords:</b> (' + atom.x.toFixed(2) + ', ' + atom.y.toFixed(2) + ', ' + atom.z.toFixed(2) + ')';
+                
+                $('#info-content').html(info);
+                $('#info-panel').addClass('visible');
+            }});
+            
+            // Track hovered residue to avoid re-highlighting
+            var hoveredResidue = null;
+            
+            // Hover effect - show pink/magenta highlight like NVIDIA NIMs
+            viewer.setHoverable({{}}, true, 
+                function(atom, viewer, event, container) {{
+                    // Skip if this residue is already hovered
+                    var resiKey = atom.chain + '_' + atom.resi;
+                    if (hoveredResidue === resiKey) return;
+                    
+                    hoveredResidue = resiKey;
+                    
+                    // Add label
+                    if (!atom.label) {{
+                        atom.label = viewer.addLabel(atom.resn + atom.resi, {{
+                            position: atom,
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            fontColor: 'white',
+                            fontSize: 11,
+                            backgroundOpacity: 0.9
+                        }});
+                    }}
+                    
+                    // Add pink/magenta highlight effect on the hovered residue
+                    // This creates a glowing outline effect
+                    viewer.addStyle({{chain: atom.chain, resi: atom.resi}}, {{
+                        cartoon: {{
+                            color: '#FF69B4',  // Hot pink for cartoon
+                            opacity: 1.0
+                        }},
+                        stick: {{
+                            color: '#FF1493',  // Deep pink for sticks
+                            radius: 0.25
+                        }},
+                        sphere: {{
+                            color: '#FF1493',
+                            scale: 0.3
+                        }}
+                    }});
+                    
+                    viewer.render();
+                }},
+                function(atom, viewer) {{
+                    // Remove label on unhover
+                    if (atom.label) {{
+                        viewer.removeLabel(atom.label);
+                        delete atom.label;
+                    }}
+                    
+                    var resiKey = atom.chain + '_' + atom.resi;
+                    if (hoveredResidue === resiKey) {{
+                        hoveredResidue = null;
+                        
+                        // Re-apply the full style to clear the hover highlight
+                        applyStyle();
+                    }}
+                }}
+            );
+        }});
+    </script>
+</body>
+</html>
+"""
         return html
 
     except Exception as e:
-        st.error(f"Visualization error: {str(e)}")
-        return f"<p>Visualization failed: {str(e)}</p>"
+        return f"<p style='color:red;'>Visualization failed: {str(e)}</p>"
 
 def generate_mock_pdb(sequence: str) -> str:
     """

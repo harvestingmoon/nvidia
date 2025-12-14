@@ -59,96 +59,161 @@ def validate_pdb_content(pdb_content: str) -> dict:
     except Exception as e:
         return {"valid": False, "error": f"PDB validation error: {str(e)}"}
 
-def create_3d_visualization(pdb_content: str, style: str = "cartoon", show_plddt_legend: bool = True) -> str:
-    """Create 3D molecular visualization using py3Dmol with pLDDT coloring"""
-    view_id = "mol_view"
+
+def check_has_plddt_scores(pdb_content: str) -> bool:
+    """Check if PDB has meaningful pLDDT scores in B-factor column"""
+    if not pdb_content:
+        return False
     
-    # Check if this is AlphaFold output (has B-factor/pLDDT scores)
-    # AlphaFold stores pLDDT in the B-factor column
-    is_alphafold = "ATOM" in pdb_content and any(
-        keyword in pdb_content.upper() 
-        for keyword in ["ALPHAFOLD", "PREDICTED", "MODEL"]
-    )
+    b_factors = []
+    for line in pdb_content.split('\n'):
+        if line.startswith('ATOM'):
+            try:
+                b_factor = float(line[60:66].strip())
+                b_factors.append(b_factor)
+            except (ValueError, IndexError):
+                continue
     
-    style_options = {
-        "cartoon": {"cartoon": {"color": "spectrum"}},
-        "stick": {"stick": {"radius": 0.2}},
-        "sphere": {"sphere": {"radius": 1.0}},
-        "line": {"line": {"linewidth": 2}},
-        "cartoon+stick": [{"cartoon": {"color": "spectrum"}}, {"stick": {"radius": 0.1}}],
-        "plddt": {"cartoon": {"colorscheme": {"prop": "b", "gradient": "roygb", "min": 50, "max": 90}}}
-    }
+    if not b_factors:
+        return False
     
-    selected_style = style_options.get(style, style_options["cartoon"])
+    # Check if B-factors look like pLDDT scores (0-100 range with variation)
+    min_b = min(b_factors)
+    max_b = max(b_factors)
+    avg_b = sum(b_factors) / len(b_factors)
     
-    # Legend HTML for pLDDT scores
+    # pLDDT scores are typically 0-100 with meaningful variation
+    # If all values are the same or outside 0-100, probably not pLDDT
+    has_variation = (max_b - min_b) > 5
+    in_plddt_range = 0 <= min_b <= 100 and 0 <= max_b <= 100
+    reasonable_avg = 20 <= avg_b <= 100
+    
+    return has_variation and in_plddt_range and reasonable_avg
+
+def create_3d_visualization(pdb_content: str, style: str = "cartoon", show_plddt_legend: bool = True, color_by_plddt: bool = None) -> str:
+    """Create 3D molecular visualization using py3Dmol with pLDDT coloring
+    
+    Args:
+        pdb_content: PDB file content as string
+        style: Visualization style ('cartoon', 'stick', etc.)
+        show_plddt_legend: Whether to show the pLDDT legend
+        color_by_plddt: Force pLDDT coloring on/off. If None, auto-detect.
+    """
+    import random
+    view_id = f"mol_view_{random.randint(1000, 9999)}"
+    
+    # Auto-detect if we should use pLDDT coloring
+    if color_by_plddt is None:
+        color_by_plddt = check_has_plddt_scores(pdb_content)
+    
+    # Show legend only if we're using pLDDT coloring
+    show_legend = show_plddt_legend and color_by_plddt
+    
+    # Legend HTML for pLDDT scores - using absolute positioning within container
     legend_html = ""
-    if show_plddt_legend:
-        legend_html = """
-        <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(255,255,255,0.95); 
-                    padding: 12px 15px; border-radius: 8px; font-family: Arial, sans-serif; font-size: 12px;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 1000; border: 1px solid #e0e0e0;">
-            <div style="font-weight: bold; margin-bottom: 8px; color: #333; font-size: 13px;">
+    if show_legend:
+        legend_html = f"""
+        <div id="legend_{view_id}" style="
+            position: absolute; 
+            top: 10px; 
+            right: 10px; 
+            background: rgba(30, 30, 30, 0.95); 
+            padding: 12px 16px; 
+            border-radius: 10px; 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            font-size: 11px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); 
+            z-index: 1000; 
+            border: 1px solid rgba(118, 185, 0, 0.5);
+            pointer-events: none;
+        ">
+            <div style="font-weight: 600; margin-bottom: 8px; color: #76B900; font-size: 12px; letter-spacing: 0.5px;">
                 pLDDT Confidence
             </div>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 20px; height: 14px; background: #0053D6; border-radius: 2px;"></div>
-                    <span style="color: #444;">&gt;90: Very high</span>
+                    <span style="color: #E8E8E8;">&gt;90: Very high</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 20px; height: 14px; background: #65CBF3; border-radius: 2px;"></div>
-                    <span style="color: #444;">70-90: Confident</span>
+                    <span style="color: #E8E8E8;">70-90: Confident</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 20px; height: 14px; background: #FFDB13; border-radius: 2px;"></div>
-                    <span style="color: #444;">50-70: Low</span>
+                    <span style="color: #E8E8E8;">50-70: Low</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <div style="width: 20px; height: 14px; background: #FF7D45; border-radius: 2px;"></div>
-                    <span style="color: #444;">&lt;50: Very low</span>
+                    <span style="color: #E8E8E8;">&lt;50: Very low</span>
                 </div>
             </div>
         </div>
         """
     
+    # Determine coloring style based on whether pLDDT is available
+    if color_by_plddt:
+        style_js = """
+                viewer.setStyle({}, {
+                    cartoon: {
+                        colorfunc: function(atom) {
+                            var plddt = atom.b;
+                            if (plddt > 90) return '#0053D6';
+                            else if (plddt > 70) return '#65CBF3';
+                            else if (plddt > 50) return '#FFDB13';
+                            else return '#FF7D45';
+                        }
+                    }
+                });
+        """
+    else:
+        # Use spectrum coloring by residue number when pLDDT not available
+        style_js = """
+                viewer.setStyle({}, {
+                    cartoon: {
+                        color: 'spectrum'
+                    }
+                });
+        """
+    
     html_content = f"""
-    <div id="{view_id}" style="height: 600px; width: 100%; position: relative;">
-        {legend_html}
-    </div>
-    <script src="https://cdn.jsdelivr.net/npm/3dmol@latest/build/3Dmol-min.js"></script>
-    <script>
-    $(document).ready(function() {{
-        let viewer = $3Dmol.createViewer($("#{view_id}"), {{
-            defaultcolors: $3Dmol.rasmolElementColors
-        }});
-        
-        let pdbData = `{pdb_content}`;
-        
-        viewer.addModel(pdbData, "pdb");
-        
-        // Apply pLDDT coloring using B-factor values (AlphaFold stores pLDDT there)
-        viewer.setStyle({{}}, {{
-            cartoon: {{
-                colorfunc: function(atom) {{
-                    // pLDDT is stored in B-factor column
-                    var plddt = atom.b;
-                    if (plddt > 90) return '#0053D6';      // Dark blue - very high
-                    else if (plddt > 70) return '#65CBF3'; // Light blue - confident  
-                    else if (plddt > 50) return '#FFDB13'; // Yellow - low
-                    else return '#FF7D45';                  // Orange - very low
-                }}
-            }}
-        }});
-        
-        viewer.zoomTo();
-        viewer.render();
-        viewer.zoom(1.2);
-        
-        // Add rotation animation
-        viewer.rotate(10, {{x:1, y:1, z:0}});
-    }});
-    </script>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/3dmol@latest/build/3Dmol-min.js"></script>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ margin: 0; padding: 0; overflow: hidden; background: #1a1a1a; }}
+            .viewer-container {{ position: relative; width: 100%; height: 500px; }}
+            #{view_id} {{ width: 100%; height: 100%; }}
+        </style>
+    </head>
+    <body>
+        <div class="viewer-container">
+            {legend_html}
+            <div id="{view_id}"></div>
+        </div>
+        <script>
+            $(document).ready(function() {{
+                let viewer = $3Dmol.createViewer("{view_id}", {{
+                    backgroundColor: '#1a1a1a'
+                }});
+                
+                let pdbData = `{pdb_content}`;
+                
+                viewer.addModel(pdbData, "pdb");
+                
+                {style_js}
+                
+                viewer.zoomTo();
+                viewer.render();
+                viewer.zoom(1.2);
+                viewer.rotate(10, {{x:1, y:1, z:0}});
+            }});
+        </script>
+    </body>
+    </html>
     """
     
     return html_content

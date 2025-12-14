@@ -14,7 +14,7 @@ import time
 import zipfile
 import io
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Set
 import requests
 
 from .workflow_state import (
@@ -25,6 +25,141 @@ from .workflow_state import (
     BinderProteinData,
     ComplexAnalysisData
 )
+
+
+def extract_residues_from_pdb(pdb_content: str) -> Dict[str, List[int]]:
+    """
+    Extract residue numbers and chains from PDB content
+    
+    Args:
+        pdb_content: PDB file content as string
+        
+    Returns:
+        Dict mapping chain ID to list of residue numbers
+    """
+    residues_by_chain: Dict[str, Set[int]] = {}
+    
+    for line in pdb_content.split('\n'):
+        if line.startswith('ATOM'):
+            try:
+                chain = line[21].strip() or 'A'
+                res_num = int(line[22:26].strip())
+                
+                if chain not in residues_by_chain:
+                    residues_by_chain[chain] = set()
+                residues_by_chain[chain].add(res_num)
+            except (ValueError, IndexError):
+                continue
+    
+    # Convert sets to sorted lists
+    return {chain: sorted(list(nums)) for chain, nums in residues_by_chain.items()}
+
+
+def validate_hotspot_residues(pdb_content: str, hotspot_res: List[str]) -> Tuple[List[str], List[str]]:
+    """
+    Validate that hotspot residues exist in the PDB file
+    
+    Args:
+        pdb_content: PDB file content
+        hotspot_res: List of hotspot residues (e.g., ["A14", "A15"])
+        
+    Returns:
+        Tuple of (valid_hotspots, invalid_hotspots)
+    """
+    residues = extract_residues_from_pdb(pdb_content)
+    valid = []
+    invalid = []
+    
+    for hotspot in hotspot_res:
+        # Parse hotspot format (e.g., "A14" -> chain='A', res_num=14)
+        if len(hotspot) < 2:
+            invalid.append(hotspot)
+            continue
+            
+        chain = hotspot[0].upper()
+        try:
+            res_num = int(hotspot[1:])
+        except ValueError:
+            invalid.append(hotspot)
+            continue
+        
+        if chain in residues and res_num in residues[chain]:
+            valid.append(hotspot)
+        else:
+            invalid.append(hotspot)
+    
+    return valid, invalid
+
+
+def validate_and_fix_contigs(pdb_content: str, contigs: str) -> Tuple[str, List[str]]:
+    """
+    Validate contigs specification against PDB and auto-fix if needed.
+    
+    Contigs format: "A1-25/0 70-100" means:
+    - A1-25: Use residues 1-25 from chain A of target
+    - /0: Separator
+    - 70-100: Generate 70-100 new residues for binder
+    
+    Args:
+        pdb_content: PDB file content
+        contigs: Contigs specification string
+        
+    Returns:
+        Tuple of (fixed_contigs, list_of_warnings)
+    """
+    residues = extract_residues_from_pdb(pdb_content)
+    warnings = []
+    
+    if not residues:
+        return contigs, ["Could not extract residues from PDB"]
+    
+    # Parse contigs - format like "A1-25/0 70-100" or "A10-50/0 60-80"
+    import re
+    
+    # Find chain-residue patterns like A1-25, B10-50
+    chain_pattern = re.compile(r'([A-Z])(\d+)-(\d+)')
+    
+    fixed_contigs = contigs
+    
+    for match in chain_pattern.finditer(contigs):
+        chain = match.group(1)
+        start_res = int(match.group(2))
+        end_res = int(match.group(3))
+        original = match.group(0)
+        
+        if chain not in residues:
+            # Chain doesn't exist, try to find any chain
+            available_chain = list(residues.keys())[0] if residues else 'A'
+            warnings.append(f"Chain {chain} not found in PDB, using chain {available_chain}")
+            chain = available_chain
+        
+        if chain in residues:
+            available_nums = residues[chain]
+            min_res = min(available_nums)
+            max_res = max(available_nums)
+            
+            # Check if requested range is valid
+            if start_res < min_res or end_res > max_res:
+                # Need to fix the range
+                # Keep the same range size if possible
+                range_size = end_res - start_res
+                
+                # Adjust to fit within available residues
+                new_start = max(min_res, min(start_res, max_res - range_size))
+                new_end = min(max_res, new_start + range_size)
+                
+                # Make sure we have at least some residues
+                if new_end <= new_start:
+                    new_start = min_res
+                    new_end = min(max_res, min_res + range_size)
+                
+                new_contig = f"{chain}{new_start}-{new_end}"
+                fixed_contigs = fixed_contigs.replace(original, new_contig)
+                warnings.append(
+                    f"Adjusted {original} to {new_contig} (PDB has {chain}{min_res}-{max_res})"
+                )
+    
+    return fixed_contigs, warnings
 
 
 class GenerativePipeline:
@@ -435,10 +570,37 @@ class GenerativePipeline:
             print(f"[DEBUG] Found {len(target_pdb_lines)} ATOM lines, using first 400")
             target_pdb_input = "\n".join(target_pdb_lines[:400])
             
+            # Get available residues for validation
+            available_residues = extract_residues_from_pdb(target_pdb_input)
+            print(f"[DEBUG] Available residues in PDB: {available_residues}")
+            
+            # Validate and fix contigs specification
+            fixed_contigs, contig_warnings = validate_and_fix_contigs(target_pdb_input, contigs)
+            if contig_warnings:
+                for warning in contig_warnings:
+                    print(f"[DEBUG] CONTIGS WARNING: {warning}")
+            if fixed_contigs != contigs:
+                print(f"[DEBUG] Contigs adjusted from '{contigs}' to '{fixed_contigs}'")
+                contigs = fixed_contigs
+            
+            # Validate hotspot residues if provided
+            validated_hotspots = None
+            if hotspot_res:
+                valid, invalid = validate_hotspot_residues(target_pdb_input, hotspot_res)
+                if invalid:
+                    print(f"[DEBUG] WARNING: Invalid hotspot residues removed: {invalid}")
+                    # Get available residues for error message
+                    available = extract_residues_from_pdb(target_pdb_input)
+                    available_str = ", ".join([f"{chain}: {min(nums)}-{max(nums)}" for chain, nums in available.items()])
+                    if not valid:
+                        return False, f"All hotspot residues are invalid: {invalid}. Available residues: {available_str}"
+                    print(f"[DEBUG] Using valid hotspots: {valid}")
+                validated_hotspots = valid if valid else None
+            
             # Store parameters
             self.session.binder.rfdiffusion_params = {
                 "contigs": contigs,
-                "hotspot_res": hotspot_res or [],
+                "hotspot_res": validated_hotspots or [],
                 "diffusion_steps": diffusion_steps
             }
             
@@ -448,11 +610,11 @@ class GenerativePipeline:
                 "contigs": contigs,
                 "diffusion_steps": diffusion_steps
             }
-            if hotspot_res:
-                payload["hotspot_res"] = hotspot_res
+            if validated_hotspots:
+                payload["hotspot_res"] = validated_hotspots
             
             print(f"[DEBUG] Sending RFDiffusion request to {self.endpoints['rfdiffusion']}")
-            print(f"[DEBUG] Payload: contigs={contigs}, hotspots={hotspot_res}, steps={diffusion_steps}")
+            print(f"[DEBUG] Payload: contigs={contigs}, hotspots={validated_hotspots}, steps={diffusion_steps}")
             
             response = requests.post(
                 self.endpoints["rfdiffusion"],
@@ -612,27 +774,129 @@ class GenerativePipeline:
             self.session.update_stage_status(WorkflowStage.BINDER_SEQUENCE_DESIGN, StageStatus.FAILED)
             return False, f"Sequence design failed: {str(e)}"
     
+    # ================== ALPHAFOLD3 MULTIMER ==================
+    
+    def _call_alphafold3_multimer(
+        self,
+        binder_sequence: str,
+        target_sequence: str,
+        num_diffusion_samples: int = 1,
+        model_seeds: List[int] = None
+    ) -> str:
+        """
+        Call AlphaFold3 server for complex (multimer) prediction
+        
+        Args:
+            binder_sequence: Binder protein sequence
+            target_sequence: Target protein sequence
+            num_diffusion_samples: Number of diffusion samples
+            model_seeds: Random seeds for reproducibility
+            
+        Returns:
+            PDB structure string of the complex
+        """
+        from core.protein_models import ALPHAFOLD3_SERVER
+        
+        if model_seeds is None:
+            model_seeds = [42]
+        
+        print(f"[DEBUG] _call_alphafold3_multimer: binder={len(binder_sequence)}AA, target={len(target_sequence)}AA")
+        print(f"[DEBUG] Server: {ALPHAFOLD3_SERVER['host']}")
+        
+        # Check server health first
+        health_url = f"{ALPHAFOLD3_SERVER['host']}{ALPHAFOLD3_SERVER['health_endpoint']}"
+        print(f"[DEBUG] Checking server health at {health_url}")
+        
+        try:
+            health_response = requests.get(health_url, timeout=10)
+            if health_response.status_code != 200:
+                raise Exception(f"AlphaFold3 server health check failed: {health_response.status_code}")
+            print(f"[DEBUG] Server health check passed")
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Cannot connect to AlphaFold3 server at {ALPHAFOLD3_SERVER['host']}: {str(e)}")
+        
+        # Prepare multimer payload with two chains
+        payload = {
+            "name": f"{self.session.project_name}_complex",
+            "sequences": [
+                {"id": "A", "sequence": target_sequence},  # Chain A: Target
+                {"id": "B", "sequence": binder_sequence}   # Chain B: Binder
+            ],
+            "model_seeds": model_seeds,
+            "num_diffusion_samples": num_diffusion_samples
+        }
+        
+        predict_url = f"{ALPHAFOLD3_SERVER['host']}{ALPHAFOLD3_SERVER['predict_endpoint']}"
+        print(f"[DEBUG] Sending multimer prediction request to {predict_url}")
+        
+        # AlphaFold3 can take a while, use extended timeout
+        response = requests.post(
+            predict_url,
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=(10, 1800)  # 30 minute timeout for prediction
+        )
+        
+        print(f"[DEBUG] Response status code: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"[DEBUG] Got response, keys: {result.keys() if isinstance(result, dict) else type(result)}")
+            
+            # Extract PDB content (same logic as single chain)
+            pdb_text = None
+            
+            if isinstance(result, dict):
+                if result.get("error"):
+                    raise Exception(f"AlphaFold3 error: {result['error']}")
+                
+                # Try direct PDB content keys
+                if "model_pdb_content" in result and result["model_pdb_content"]:
+                    pdb_text = result["model_pdb_content"]
+                    print(f"[DEBUG] Found PDB in 'model_pdb_content'")
+                elif "model_pdb_base64" in result and result["model_pdb_base64"]:
+                    import base64
+                    pdb_text = base64.b64decode(result["model_pdb_base64"]).decode('utf-8')
+                    print(f"[DEBUG] Decoded PDB from 'model_pdb_base64'")
+                elif "model_cif_content" in result and result["model_cif_content"]:
+                    pdb_text = result["model_cif_content"]
+                    print(f"[DEBUG] Found CIF in 'model_cif_content'")
+            
+            if not pdb_text:
+                print(f"[DEBUG] Could not parse PDB from response: {str(result)[:500]}")
+                raise ValueError(f"Could not extract PDB from AlphaFold3 response. Keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
+            
+            print(f"[DEBUG] Successfully extracted complex structure, length: {len(pdb_text)}")
+            return pdb_text
+            
+        else:
+            error_detail = response.text[:500] if len(response.text) > 500 else response.text
+            print(f"[DEBUG] Error response: {error_detail}")
+            raise Exception(f"AlphaFold3 API error: {response.status_code} - {error_detail}")
+    
     # ================== STEP 4: COMPLEX PREDICTION ==================
     
     def run_complex_prediction(
         self,
         sequence_idx: int = 0,
         selected_models: List[int] = [1],
-        relax_prediction: bool = False
+        relax_prediction: bool = False,
+        model_type: str = "alphafold2_multimer"  # "alphafold2_multimer" or "alphafold3"
     ) -> Tuple[bool, str]:
         """
-        Step 4: Predict binder-target complex using AlphaFold-Multimer
+        Step 4: Predict binder-target complex using AlphaFold-Multimer or AlphaFold3
         
         Args:
             sequence_idx: Index of the designed sequence to use
-            selected_models: Which AF-Multimer models to use (1-5)
-            relax_prediction: Whether to relax the structure
+            selected_models: Which AF-Multimer models to use (1-5) - only for AF2
+            relax_prediction: Whether to relax the structure - only for AF2
+            model_type: "alphafold2_multimer" or "alphafold3"
             
         Returns:
             (success, message)
         """
         print(f"\n{'='*60}")
-        print(f"STEP 4: Complex Prediction (AlphaFold-Multimer)")
+        print(f"STEP 4: Complex Prediction ({model_type})")
         print(f"{'='*60}")
         
         if not self.session.binder.mpnn_sequences:
@@ -651,48 +915,64 @@ class GenerativePipeline:
             self.session.binder.selected_sequence_idx = sequence_idx
             self.session.binder.sequence = binder_seq
             
-            # Call AlphaFold-Multimer
-            payload = {
-                "sequences": [binder_seq, target_seq],
-                "selected_models": selected_models,
-                "relax_prediction": relax_prediction,
-                "databases": ["small_bfd"]
-            }
+            complex_pdb = None
             
-            response = requests.post(
-                self.endpoints["multimer"],
-                headers=self.headers,
-                json=payload,
-                timeout=(10, 310)
-            )
-            
-            if response.status_code == 200:
-                result = response
-            elif response.status_code == 202:
-                result = self._poll_async_multimer(response)
+            if model_type == "alphafold3":
+                # Use AlphaFold3 server for complex prediction
+                print(f"[DEBUG] Using AlphaFold3 for complex prediction")
+                complex_pdb = self._call_alphafold3_multimer(
+                    binder_sequence=binder_seq,
+                    target_sequence=target_seq,
+                    num_diffusion_samples=1,
+                    model_seeds=[42]
+                )
+                self.session.complex.docking_method = "alphafold3"
+                
             else:
-                raise Exception(f"Multimer API error: {response.status_code} - {response.text}")
-            
-            # Save ZIP file
-            zip_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.zip"
-            zip_path = self.output_dir / zip_filename
-            with open(zip_path, 'wb') as f:
-                f.write(result.content)
-            self.session.complex.multimer_zip_path = str(zip_path)
-            
-            # Extract PDB from ZIP
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                names = zf.namelist()
-                for name in names:
-                    raw = zf.read(name)
-                    text = raw.decode("utf-8", "ignore")
-                    obj = json.loads(text)
-                    complex_pdb = "".join(obj) if isinstance(obj, list) else str(obj)
+                # Use AlphaFold2-Multimer (NVIDIA API)
+                print(f"[DEBUG] Using AlphaFold2-Multimer for complex prediction")
+                payload = {
+                    "sequences": [binder_seq, target_seq],
+                    "selected_models": selected_models,
+                    "relax_prediction": relax_prediction,
+                    "databases": ["small_bfd"]
+                }
+                
+                response = requests.post(
+                    self.endpoints["multimer"],
+                    headers=self.headers,
+                    json=payload,
+                    timeout=(10, 310)
+                )
+                
+                if response.status_code == 200:
+                    result = response
+                elif response.status_code == 202:
+                    result = self._poll_async_multimer(response)
+                else:
+                    raise Exception(f"Multimer API error: {response.status_code} - {response.text}")
+                
+                # Save ZIP file
+                zip_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.zip"
+                zip_path = self.output_dir / zip_filename
+                with open(zip_path, 'wb') as f:
+                    f.write(result.content)
+                self.session.complex.multimer_zip_path = str(zip_path)
+                
+                # Extract PDB from ZIP
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    names = zf.namelist()
+                    for name in names:
+                        raw = zf.read(name)
+                        text = raw.decode("utf-8", "ignore")
+                        obj = json.loads(text)
+                        complex_pdb = "".join(obj) if isinstance(obj, list) else str(obj)
+                
+                self.session.complex.docking_method = "alphafold2_multimer"
+                self.session.complex.multimer_model_used = selected_models[0] if selected_models else 1
             
             # Store results
             self.session.complex.complex_pdb = complex_pdb
-            self.session.complex.docking_method = "alphafold_multimer"
-            self.session.complex.multimer_model_used = selected_models[0] if selected_models else 1
             
             # Save PDB
             pdb_filename = f"{self.session.project_name}_complex_{sequence_idx+1}.pdb"
@@ -731,7 +1011,8 @@ class GenerativePipeline:
         self,
         num_candidates: int = 3,
         selected_models: List[int] = [1],
-        relax_prediction: bool = False
+        relax_prediction: bool = False,
+        model_type: str = "alphafold2_multimer"  # "alphafold2_multimer" or "alphafold3"
     ) -> Tuple[bool, str]:
         """
         Step 5: Predict complexes for multiple sequence candidates and rank them
@@ -740,12 +1021,13 @@ class GenerativePipeline:
             num_candidates: Number of top sequences to evaluate
             selected_models: Which AF-Multimer models to use
             relax_prediction: Whether to relax structures
+            model_type: "alphafold2_multimer" or "alphafold3"
             
         Returns:
             (success, message)
         """
         print(f"\n{'='*60}")
-        print(f"STEP 5: Batch Complex Prediction & Ranking")
+        print(f"STEP 5: Batch Complex Prediction & Ranking ({model_type})")
         print(f"{'='*60}")
         
         num_candidates = min(num_candidates, len(self.session.binder.mpnn_sequences))
@@ -753,7 +1035,9 @@ class GenerativePipeline:
         
         for i in range(num_candidates):
             print(f"\nEvaluating candidate {i+1}/{num_candidates}...")
-            success, msg = self.run_complex_prediction(i, selected_models, relax_prediction)
+            success, msg = self.run_complex_prediction(
+                i, selected_models, relax_prediction, model_type=model_type
+            )
             
             if success:
                 rankings.append({

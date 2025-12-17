@@ -539,7 +539,7 @@ def create_3d_visualization(
     pdb_content: str,
     vmin: float = 0.0,    # lower bound of pLDDT range for color scale
     vmax: float = 100.0,  # upper bound of pLDDT range for color scale
-    color_by_plddt: bool = None  # None = auto-detect
+    color_by_plddt: bool = None  # None = auto-detect, True = force pLDDT, False = force solid color
 ) -> str:
     """
     Create a 3D molecular visualization using py3Dmol, colored by pLDDT
@@ -547,7 +547,8 @@ def create_3d_visualization(
     Returns HTML string with vertical color bar legend.
     """
     try:
-        # Auto-detect if pLDDT coloring should be used
+        # Only auto-detect if color_by_plddt is None
+        # If explicitly set to True or False, use that value
         if color_by_plddt is None:
             # Check if B-factors look like pLDDT scores
             b_factors = []
@@ -663,62 +664,28 @@ def create_3d_visualization(
             </div>
             """
         else:
+            # Use a single solid color (steel blue) for structures without pLDDT
             style_js = """
                 viewer.setStyle({}, {
-                    cartoon: { color: 'spectrum' }
+                    cartoon: { color: '#4682B4' }
                 });
             """
+            # No legend needed for single color
             legend_html = """
             <div style="
                 position: absolute;
                 right: 20px;
-                top: 50%;
-                transform: translateY(-50%);
-                display: flex;
-                flex-direction: row;
-                align-items: center;
-                gap: 8px;
+                bottom: 20px;
+                background: rgba(255,255,255,0.9);
+                padding: 10px 15px;
+                border-radius: 6px;
                 font-family: Arial, sans-serif;
+                font-size: 12px;
+                color: #333;
+                border: 1px solid #ccc;
             ">
-                <div style="
-                    width: 25px;
-                    height: 300px;
-                    background: linear-gradient(to bottom, 
-                        #FF0000 0%,
-                        #FF8000 12.5%,
-                        #FFFF00 25%,
-                        #80FF00 37.5%,
-                        #00FF00 50%,
-                        #00FF80 62.5%,
-                        #00FFFF 75%,
-                        #0080FF 87.5%,
-                        #0000FF 100%
-                    );
-                    border-radius: 4px;
-                    border: 1px solid #ccc;
-                "></div>
-                <div style="
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    height: 300px;
-                    font-size: 12px;
-                    color: #333;
-                ">
-                    <span style="font-weight: bold;">N-term</span>
-                    <span></span>
-                    <span style="color: #888;">Middle</span>
-                    <span></span>
-                    <span style="font-weight: bold;">C-term</span>
-                </div>
-                <div style="
-                    writing-mode: vertical-rl;
-                    text-orientation: mixed;
-                    transform: rotate(180deg);
-                    font-size: 11px;
-                    color: #555;
-                    letter-spacing: 1px;
-                ">Residue Position</div>
+                <span style="display: inline-block; width: 12px; height: 12px; background: #4682B4; border-radius: 2px; margin-right: 8px; vertical-align: middle;"></span>
+                Scaffold Structure
             </div>
             """
         

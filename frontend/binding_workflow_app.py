@@ -1313,6 +1313,25 @@ def render_target_input_stage():
     """Stage 1: Target Protein Input"""
     st.header("1️⃣ Target Protein Input")
     
+    # Page description
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #76B900; margin-bottom: 20px;">
+        <h4 style="margin: 0 0 10px 0; color: #1A1A1A;">📌 What is a Target Protein?</h4>
+        <p style="margin: 0; color: #333;">
+            The <b>target protein</b> is the molecule you want to design a binder for. This could be:
+        </p>
+        <ul style="margin: 10px 0; color: #333;">
+            <li><b>A disease-related protein</b> - e.g., a viral spike protein you want to neutralize</li>
+            <li><b>A receptor</b> - e.g., a cell surface receptor you want to activate or block</li>
+            <li><b>An enzyme</b> - e.g., an enzyme you want to inhibit</li>
+            <li><b>An antibody target</b> - e.g., an antigen for therapeutic antibody development</li>
+        </ul>
+        <p style="margin: 0; color: #666; font-size: 0.9em;">
+            💡 <i>Example: To design a binder for insulin, you would input the insulin sequence as your target.</i>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     session = st.session_state.workflow_session
     target = session.target
     
@@ -1518,6 +1537,16 @@ def render_target_prediction_stage():
     """Stage 2: Target Structure Prediction"""
     st.header("2️⃣ Target Structure Prediction")
     
+    # Page description
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #76B900; margin-bottom: 20px;">
+        <p style="margin: 0; color: #333;">
+            Predict the 3D structure of your target protein using state-of-the-art AI models. 
+            The structure is essential for designing a binder that fits properly.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     session = st.session_state.workflow_session
     target = session.target
     
@@ -1717,13 +1746,30 @@ def render_target_prediction_stage():
     if target.pdb_content:
         st.subheader("Target Structure")
         
+        # Calculate average pLDDT from PDB if not already set
+        avg_plddt = target.confidence_avg
+        if not avg_plddt and target.pdb_content:
+            b_factors = []
+            for line in target.pdb_content.split('\\n'):
+                if line.startswith('ATOM'):
+                    try:
+                        b_factor = float(line[60:66].strip())
+                        b_factors.append(b_factor)
+                    except (ValueError, IndexError):
+                        continue
+            if b_factors:
+                # Check if B-factors look like pLDDT scores
+                min_b, max_b = min(b_factors), max(b_factors)
+                if 0 <= min_b <= 100 and 0 <= max_b <= 100 and (max_b - min_b) > 5:
+                    avg_plddt = sum(b_factors) / len(b_factors)
+        
         # Show model info
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Model Used", target.model_used or "Unknown")
         with col2:
-            if target.confidence_avg:
-                st.metric("Avg Confidence", f"{target.confidence_avg:.1f}")
+            if avg_plddt:
+                st.metric("Avg pLDDT", f"{avg_plddt:.1f}")
             else:
                 st.metric("Structure", "✅ Predicted")
         with col3:
@@ -1801,7 +1847,19 @@ def render_binder_design_stage():
 def render_binder_scaffold_stage():
     """Stage 3: Binder Scaffold Design (RFDiffusion)"""
     st.header("3️⃣ Binder Scaffold Design")
-    st.markdown("Generate a binder scaffold using **RFDiffusion** AI")
+    
+    # Page description
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #76B900; margin-bottom: 20px;">
+        <p style="margin: 0; color: #333;">
+            <b>RFDiffusion</b> uses AI diffusion models to generate a 3D backbone scaffold for your binder protein. 
+            This scaffold defines the overall shape and structure that will interact with your target.
+        </p>
+        <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9em;">
+            💡 <i>The scaffold is like an architectural blueprint - it defines the shape but not the amino acid sequence.</i>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     session = st.session_state.workflow_session
     binder = session.binder
@@ -1916,7 +1974,8 @@ def render_binder_scaffold_stage():
         st.success("✅ Binder scaffold already generated!")
         
         with st.expander("View Scaffold Structure", expanded=True):
-            viz_html = create_3d_visualization(binder.scaffold_pdb)
+            # RFDiffusion scaffold doesn't have pLDDT - use single color
+            viz_html = create_3d_visualization(binder.scaffold_pdb, color_by_plddt=False)
             st.components.v1.html(viz_html, height=600, scrolling=False)
         
         if is_completed:
@@ -1975,7 +2034,19 @@ def render_binder_scaffold_stage():
 def render_binder_sequence_stage():
     """Stage 4: Sequence Design (ProteinMPNN)"""
     st.header("4️⃣ Sequence Design")
-    st.markdown("Design amino acid sequences using **ProteinMPNN**")
+    
+    # Page description
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #76B900; margin-bottom: 20px;">
+        <p style="margin: 0; color: #333;">
+            <b>ProteinMPNN</b> designs amino acid sequences that will fold into your scaffold structure. 
+            It generates multiple sequence variants optimized for stability and binding.
+        </p>
+        <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9em;">
+            💡 <i>Think of it as filling in the blueprint with specific building materials (amino acids).</i>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     session = st.session_state.workflow_session
     binder = session.binder
@@ -1998,9 +2069,11 @@ def render_binder_sequence_stage():
     st.subheader("Binder Scaffold")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Scaffold", "✅ Available")
+        st.metric("Scaffold", "✅ Available" if binder.scaffold_pdb else "❌ Missing")
     with col2:
-        st.metric("Design Method", "RFDiffusion")
+        # Show the actual model used for scaffold design
+        scaffold_method = binder.rfdiffusion_params.get("model", "RFDiffusion") if binder.rfdiffusion_params else "RFDiffusion"
+        st.metric("Design Method", scaffold_method)
     with col3:
         num_existing = len(binder.mpnn_sequences)
         st.metric("Sequences", f"{num_existing} designed" if num_existing > 0 else "Not generated")
@@ -2031,25 +2104,38 @@ def render_binder_sequence_stage():
     
     # Display existing sequences
     if binder.mpnn_sequences:
-        st.success(f"✅ {len(binder.mpnn_sequences)} sequences generated!")
+        # Filter out sequences that are entirely glycine linkers
+        import re
+        valid_sequences = []
+        for i, seq in enumerate(binder.mpnn_sequences):
+            # Remove runs of 5+ glycines
+            display_seq = re.sub(r'G{5,}', '', seq)
+            # Skip if empty or only has a few amino acids left (likely just linker)
+            if len(display_seq.strip()) >= 10:
+                score = binder.mpnn_scores[i] if i < len(binder.mpnn_scores) else None
+                valid_sequences.append((i, seq, display_seq, score))
+        
+        st.success(f"✅ {len(valid_sequences)} valid sequences (filtered from {len(binder.mpnn_sequences)} total)")
         
         with st.expander("📋 View Designed Sequences", expanded=True):
-            for i, seq in enumerate(binder.mpnn_sequences):
-                score = binder.mpnn_scores[i] if i < len(binder.mpnn_scores) else None
-                selected = "[*]" if i == binder.selected_sequence_idx else "[ ]"
+            for orig_idx, seq, display_seq, score in valid_sequences:
+                selected = "[*]" if orig_idx == binder.selected_sequence_idx else "[ ]"
                 
                 col1, col2, col3 = st.columns([1, 8, 2])
                 with col1:
-                    st.markdown(f"**{selected} #{i+1}**")
+                    st.markdown(f"**{selected} #{orig_idx+1}**")
                 with col2:
-                    st.code(seq[:80] + "..." if len(seq) > 80 else seq, language="text")
+                    # Show cleaned sequence (without linkers)
+                    if display_seq != seq:
+                        st.caption("(Linker removed)")
+                    st.code(display_seq[:80] + "..." if len(display_seq) > 80 else display_seq, language="text")
                 with col3:
                     if score:
                         st.metric("Score", f"{score:.3f}")
-                    if st.button(f"Select", key=f"select_{i}"):
-                        binder.selected_sequence_idx = i
-                        binder.sequence = seq
-                        st.success(f"Selected sequence #{i+1}")
+                    if st.button(f"Select", key=f"select_{orig_idx}"):
+                        binder.selected_sequence_idx = orig_idx
+                        binder.sequence = seq  # Store original sequence with linker
+                        st.success(f"Selected sequence #{orig_idx+1}")
                         st.rerun()
         
         if is_completed:
@@ -2114,7 +2200,19 @@ def render_binder_prediction_stage():
 def render_complex_prediction_stage():
     """Stage 5: Complex Prediction (AlphaFold-Multimer)"""
     st.header("5️⃣ Complex Prediction")
-    st.markdown("Predict binder-target complex using **AlphaFold-Multimer**")
+    
+    # Page description
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #76B900; margin-bottom: 20px;">
+        <p style="margin: 0; color: #333;">
+            <b>AlphaFold-Multimer</b> predicts how your designed binder will interact with the target protein. 
+            This shows the 3D structure of the binder-target complex and validates the binding interaction.
+        </p>
+        <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9em;">
+            💡 <i>A successful prediction shows the binder positioned at the target's binding site with good confidence scores.</i>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     session = st.session_state.workflow_session
     binder = session.binder
@@ -2388,7 +2486,8 @@ def render_binder_prediction_stage():
     if binder.pdb_content:
         st.subheader("Binder Structure")
         try:
-            html_content = create_3d_visualization(binder.pdb_content)
+            # Binder structure from RFDiffusion doesn't have pLDDT - use solid color
+            html_content = create_3d_visualization(binder.pdb_content, color_by_plddt=False)
             st.components.v1.html(html_content, height=500)
         except Exception as e:
             st.error(f"Visualization error: {str(e)}")
@@ -2681,20 +2780,9 @@ def render_results_dashboard(session: WorkflowSession):
     # === SECTION 4: Complex Analysis Summary ===
     st.markdown("## 🔗 Complex Binding Analysis")
     
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        plddt_val = complex_data.plddt_score or quality_score
-        st.metric("pLDDT Score", f"{plddt_val:.1f}", delta=complex_data.quality_grade)
-    
-    with col2:
-        st.metric("Interface Contacts", complex_data.num_contacts or 0)
-    
-    with col3:
-        st.metric("Avg Distance", f"{complex_data.avg_distance or 0:.2f} Å")
-    
-    with col4:
-        st.metric("Min Distance", f"{complex_data.min_distance or 0:.2f} Å")
+    # Show only pLDDT score
+    plddt_val = complex_data.plddt_score or quality_score
+    st.metric("pLDDT Score", f"{plddt_val:.1f}")
     
     # Assessment feedback
     st.markdown("### 📊 Binding Assessment")
@@ -2846,9 +2934,10 @@ def render_results_dashboard(session: WorkflowSession):
     # === SECTION 7: Next Steps ===
     st.markdown("## 🚀 Next Steps")
     
-    col1, col2 = st.columns(2)
+    # Use a more balanced 3-column layout
+    col_rec, col_spacer, col_actions = st.columns([1, 0.1, 1])
     
-    with col1:
+    with col_rec:
         st.markdown("""
         **💡 Recommendations:**
         - Validate binding experimentally (e.g., SPR, ITC)
@@ -2857,16 +2946,30 @@ def render_results_dashboard(session: WorkflowSession):
         - Refine complex with molecular dynamics
         """)
     
-    with col2:
-        st.markdown("""
-        **🔧 Actions:**
-        """)
+    with col_actions:
+        st.markdown("**🔧 Actions:**")
+        
+        # Stack buttons vertically with consistent spacing
         if st.button("🔄 Design New Binder", use_container_width=True):
             session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
             st.rerun()
         
         if st.button("🆕 Start New Project", use_container_width=True):
             st.session_state.workflow_session = WorkflowSession.create_new()
+            st.rerun()
+    
+    # Add navigation buttons at the bottom in a clean row
+    st.markdown("---")
+    nav_col1, nav_col2 = st.columns(2)
+    
+    with nav_col1:
+        if st.button("← Back to Analysis", use_container_width=True):
+            session.advance_to_stage(WorkflowStage.COMPLEX_PREDICTION)
+            st.rerun()
+    
+    with nav_col2:
+        if st.button("🔄 Start New Design", use_container_width=True, type="primary"):
+            session.advance_to_stage(WorkflowStage.TARGET_INPUT)
             st.rerun()
 
 

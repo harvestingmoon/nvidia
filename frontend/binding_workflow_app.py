@@ -32,8 +32,10 @@ from workflow.binding_analysis import (
     assess_binding_quality, combine_pdbs, generate_contact_map_data
 )
 from frontend.app_v2 import (
-    call_nvidia_protein_api, validate_protein_sequence,
-    create_3d_visualization, extract_pdb_from_response
+    call_nvidia_protein_api, validate_protein_sequence, extract_pdb_from_response
+)
+from core.pdb_viewer import (
+    create_3d_visualization, check_has_plddt_scores, validate_pdb_content
 )
 from core.protein_models import PROTEIN_MODELS
 
@@ -745,7 +747,7 @@ def render_pipeline_diagram():
             """, unsafe_allow_html=True)
             
             # Navigation button
-            if st.button(f"Go to Step {step['num']} →", key=f"pipeline_step_{step['num']}", use_container_width=True):
+            if st.button(f"Go to Step {step['num']} →", key=f"pipeline_step_{step['num']}", width="stretch"):
                 st.session_state.workflow_session.advance_to_stage(step['stage'])
                 st.session_state.show_pipeline = False
                 st.rerun()
@@ -809,7 +811,7 @@ def render_pipeline_diagram():
     # Back button
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("🔙 Back to Workflow", use_container_width=True, type="primary"):
+        if st.button("🔙 Back to Workflow", width="stretch", type="primary"):
             st.session_state.show_pipeline = False
             st.rerun()
 
@@ -961,7 +963,7 @@ def render_progress_stepper():
                 if st.button(
                     button_label,
                     key=f"nav_{stage.value}",
-                    use_container_width=True,
+                    width="stretch",
                     type=button_type,
                     help="Click to view this stage"
                 ):
@@ -972,7 +974,7 @@ def render_progress_stepper():
                 st.button(
                     button_label,
                     key=f"display_{stage.value}",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=True,
                     type=button_type
                 )
@@ -996,13 +998,13 @@ def render_sidebar():
     # NVIDIA Logo in Sidebar - Clickable to return to start
     try:
         # Display logo first
-        st.sidebar.image("image/nvidia.jpg", use_container_width=True)
+        st.sidebar.image("image/nvidia.jpg", width="stretch")
     except Exception as e:
         st.sidebar.markdown("# NVIDIA")
     
     # Prediction Page button - only show when pipeline is visible
     if st.session_state.get('show_pipeline', False):
-        if st.sidebar.button("Prediction Page", key="logo_home", use_container_width=True, help="Click to go to Prediction Page"):
+        if st.sidebar.button("Prediction Page", key="logo_home", width="stretch", help="Click to go to Prediction Page"):
             st.session_state.show_pipeline = False
             session.advance_to_stage(WorkflowStage.TARGET_INPUT)
             st.rerun()
@@ -1010,7 +1012,7 @@ def render_sidebar():
         # View Pipeline Diagram button - only on prediction page
         pipeline_path = Path(__file__).parent / "pipeline.html"
         if pipeline_path.exists():
-            if st.sidebar.button("View Pipeline Diagram", key="pipeline_view", use_container_width=True, help="Click to view interactive pipeline diagram"):
+            if st.sidebar.button("View Pipeline Diagram", key="pipeline_view", width="stretch", help="Click to view interactive pipeline diagram"):
                 st.session_state.show_pipeline = True
                 st.rerun()
     
@@ -1402,7 +1404,7 @@ def render_target_input_stage():
                 
                 st.success(f"✅ Stages: {', '.join(stages_text)}")
             
-            if st.button("Load This Project", type="primary", use_container_width=True):
+            if st.button("Load This Project", type="primary", width="stretch"):
                 with st.spinner("Loading pipeline results..."):
                     load_success = load_pipeline_results(session, selected_folder)
                     if load_success:
@@ -1523,7 +1525,7 @@ def render_target_input_stage():
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col2:
-        if st.button("Next: Predict Structure →", type="primary", use_container_width=True):
+        if st.button("Next: Predict Structure →", type="primary", width="stretch"):
             can_advance, message = session.can_advance_to(WorkflowStage.TARGET_PREDICTION)
             if can_advance:
                 session.advance_to_stage(WorkflowStage.TARGET_PREDICTION)
@@ -1680,7 +1682,7 @@ def render_target_prediction_stage():
             predict_clicked = st.button(
                 f"🔬 Predict with {selected_model_name}", 
                 type="primary",
-                use_container_width=True
+                width="stretch"
             )
         
         if predict_clicked:
@@ -1826,12 +1828,12 @@ def render_target_prediction_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back", use_container_width=True):
+        if st.button("← Back", width="stretch"):
             session.advance_to_stage(WorkflowStage.TARGET_INPUT)
             st.rerun()
     
     with col2:
-        if st.button("Next: Design Binder →", type="primary", use_container_width=True):
+        if st.button("Next: Design Binder →", type="primary", width="stretch"):
             if target.pdb_content:
                 session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
                 st.rerun()
@@ -1986,7 +1988,7 @@ def render_binder_scaffold_stage():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("Generate Binder Scaffold", type="primary", use_container_width=True):
+            if st.button("Generate Binder Scaffold", type="primary", width="stretch"):
                 pipeline = get_pipeline()
                 
                 # Show debug info
@@ -2011,7 +2013,7 @@ def render_binder_scaffold_stage():
         with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("Regenerate Scaffold", type="secondary", use_container_width=True):
+                if st.button("Regenerate Scaffold", type="secondary", width="stretch"):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.BINDER_SCAFFOLD_DESIGN, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -2021,12 +2023,12 @@ def render_binder_scaffold_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back to Target", use_container_width=True):
+        if st.button("← Back to Target", width="stretch"):
             session.advance_to_stage(WorkflowStage.TARGET_PREDICTION)
             st.rerun()
     
     with col3:
-        if st.button("Next: Sequence Design →", type="primary", use_container_width=True, disabled=not binder.scaffold_pdb):
+        if st.button("Next: Sequence Design →", type="primary", width="stretch", disabled=not binder.scaffold_pdb):
             session.advance_to_stage(WorkflowStage.BINDER_SEQUENCE_DESIGN)
             st.rerun()
 
@@ -2148,7 +2150,7 @@ def render_binder_sequence_stage():
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("Design Sequences", type="primary", use_container_width=True):
+            if st.button("Design Sequences", type="primary", width="stretch"):
                 pipeline = get_pipeline()
                 
                 # Show debug info
@@ -2172,7 +2174,7 @@ def render_binder_sequence_stage():
         with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("Regenerate Sequences", type="secondary", use_container_width=True):
+                if st.button("Regenerate Sequences", type="secondary", width="stretch"):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.BINDER_SEQUENCE_DESIGN, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -2182,12 +2184,12 @@ def render_binder_sequence_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back to Scaffold", use_container_width=True):
+        if st.button("← Back to Scaffold", width="stretch"):
             session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
             st.rerun()
     
     with col3:
-        if st.button("Next: Predict Complex →", type="primary", use_container_width=True, disabled=not binder.mpnn_sequences):
+        if st.button("Next: Predict Complex →", type="primary", width="stretch", disabled=not binder.mpnn_sequences):
             session.advance_to_stage(WorkflowStage.COMPLEX_PREDICTION)
             st.rerun()
 
@@ -2303,8 +2305,22 @@ def render_complex_prediction_stage():
         
         with col1:
             with st.expander("View Complex Structure", expanded=True):
-                viz_html = create_3d_visualization(complex_data.complex_pdb)
-                st.components.v1.html(viz_html, height=600, scrolling=False)
+                try:
+                    # Validate PDB content before visualization
+                    from core.pdb_viewer import validate_pdb_content
+                    validation = validate_pdb_content(complex_data.complex_pdb)
+                    
+                    if validation["valid"]:
+                        viz_html = create_3d_visualization(complex_data.complex_pdb, color_by_plddt=True)
+                        st.components.v1.html(viz_html, height=600, scrolling=False)
+                    else:
+                        st.error(f"⚠️ PDB validation failed: {validation.get('error', 'Unknown error')}")
+                        st.info("💡 Try downloading the PDB and opening it in PyMOL, ChimeraX, or another molecular viewer.")
+                        with st.expander("Show PDB Content"):
+                            st.text(complex_data.complex_pdb[:1000])
+                except Exception as e:
+                    st.error(f"Visualization error: {str(e)}")
+                    st.info("💡 Download the PDB file below to view in external software like PyMOL or ChimeraX.")
         
         with col2:
             st.metric("pLDDT Score", f"{complex_data.plddt_score:.2f}")
@@ -2346,7 +2362,7 @@ def render_complex_prediction_stage():
             else:
                 button_label = f"Predict Complex with {model_display_name}"
             
-            if st.button(button_label, type="primary", use_container_width=True):
+            if st.button(button_label, type="primary", width="stretch"):
                 pipeline = get_pipeline()
                 
                 # Show debug info
@@ -2381,7 +2397,7 @@ def render_complex_prediction_stage():
         with st.expander("Regenerate with Different Parameters"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                if st.button("Regenerate Complex", type="secondary", use_container_width=True):
+                if st.button("Regenerate Complex", type="secondary", width="stretch"):
                     # Reset status and allow regeneration
                     session.update_stage_status(WorkflowStage.COMPLEX_PREDICTION, StageStatus.IN_PROGRESS)
                     st.rerun()
@@ -2391,12 +2407,12 @@ def render_complex_prediction_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back to Sequences", use_container_width=True):
+        if st.button("← Back to Sequences", width="stretch"):
             session.advance_to_stage(WorkflowStage.BINDER_SEQUENCE_DESIGN)
             st.rerun()
     
     with col3:
-        if st.button("View Results →", type="primary", use_container_width=True, disabled=not complex_data.complex_pdb):
+        if st.button("View Results →", type="primary", width="stretch", disabled=not complex_data.complex_pdb):
             session.advance_to_stage(WorkflowStage.RESULTS)
             st.rerun()
 
@@ -2503,12 +2519,12 @@ def render_binder_prediction_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back", use_container_width=True):
+        if st.button("← Back", width="stretch"):
             session.advance_to_stage(WorkflowStage.BINDER_DESIGN)
             st.rerun()
     
     with col2:
-        if st.button("Next: Analyze Complex →", type="primary", use_container_width=True):
+        if st.button("Next: Analyze Complex →", type="primary", width="stretch"):
             if binder.pdb_content:
                 session.advance_to_stage(WorkflowStage.COMPLEX_ANALYSIS)
                 st.rerun()
@@ -2598,12 +2614,12 @@ def render_complex_analysis_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back", use_container_width=True):
+        if st.button("← Back", width="stretch"):
             session.advance_to_stage(WorkflowStage.BINDER_PREDICTION)
             st.rerun()
     
     with col2:
-        if st.button("View Results →", type="primary", use_container_width=True):
+        if st.button("View Results →", type="primary", width="stretch"):
             if complex_data.complex_pdb:
                 session.advance_to_stage(WorkflowStage.RESULTS)
                 st.rerun()
@@ -2637,10 +2653,16 @@ def render_analysis_results(session: WorkflowSession):
     # Complex visualization
     st.subheader("🧬 Complex Structure")
     try:
-        html_content = create_3d_visualization(complex_data.complex_pdb)
-        st.components.v1.html(html_content, height=600)
+        validation = validate_pdb_content(complex_data.complex_pdb)
+        if validation["valid"]:
+            html_content = create_3d_visualization(complex_data.complex_pdb, color_by_plddt=True)
+            st.components.v1.html(html_content, height=600)
+        else:
+            st.error(f"⚠️ PDB validation failed: {validation.get('error', 'Unknown error')}")
+            st.info("💡 Download the PDB file below and open it in PyMOL, ChimeraX, or another molecular viewer.")
     except Exception as e:
         st.error(f"Visualization error: {str(e)}")
+        st.info("💡 Download the PDB file below to view in external software.")
     
     # Download
     st.download_button(
@@ -2665,12 +2687,12 @@ def render_results_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back to Analysis", use_container_width=True):
+        if st.button("← Back to Analysis", key="results_back_nav", width="stretch"):
             session.advance_to_stage(WorkflowStage.COMPLEX_ANALYSIS)
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start New Design", use_container_width=True):
+        if st.button("🔄 Start New Design", width="stretch"):
             st.session_state.workflow_session = WorkflowSession.create_new()
             st.rerun()
 
@@ -2828,18 +2850,21 @@ def render_results_dashboard(session: WorkflowSession):
         with tab1:
             st.markdown("**Target-Binder Complex**")
             try:
-                from frontend.app_v2 import render_protein_viewer
-                render_protein_viewer(complex_data.complex_pdb, key="results_complex_viewer")
-            except:
-                st.info("💡 3D visualization not available. Download the PDB file to view in external software.")
+                viz_html = create_3d_visualization(complex_data.complex_pdb, color_by_plddt=True)
+                st.components.v1.html(viz_html, height=600, scrolling=False)
+            except Exception as e:
+                st.error(f"Visualization error: {str(e)}")
+                st.info("💡 Download the PDB file to view in external software like PyMOL or ChimeraX.")
         
         with tab2:
             st.markdown("**Target Protein Structure**")
             if target.pdb_content:
                 try:
-                    from frontend.app_v2 import render_protein_viewer
-                    render_protein_viewer(target.pdb_content, key="results_target_viewer")
-                except:
+                    has_plddt = check_has_plddt_scores(target.pdb_content)
+                    viz_html = create_3d_visualization(target.pdb_content, color_by_plddt=has_plddt)
+                    st.components.v1.html(viz_html, height=600, scrolling=False)
+                except Exception as e:
+                    st.error(f"Visualization error: {str(e)}")
                     st.info("💡 Download PDB to view externally.")
             else:
                 st.warning("Target structure not available")
@@ -2849,9 +2874,10 @@ def render_results_dashboard(session: WorkflowSession):
             binder_pdb = binder.pdb_content or binder.scaffold_pdb
             if binder_pdb:
                 try:
-                    from frontend.app_v2 import render_protein_viewer
-                    render_protein_viewer(binder_pdb, key="results_binder_viewer")
-                except:
+                    viz_html = create_3d_visualization(binder_pdb, color_by_plddt=False)
+                    st.components.v1.html(viz_html, height=600, scrolling=False)
+                except Exception as e:
+                    st.error(f"Visualization error: {str(e)}")
                     st.info("💡 Download PDB to view externally.")
             else:
                 st.warning("Binder structure not available")
@@ -2873,10 +2899,10 @@ def render_results_dashboard(session: WorkflowSession):
                 data=target.pdb_content.encode('utf-8') if isinstance(target.pdb_content, str) else target.pdb_content,
                 file_name=f"{session.project_name}_target.pdb",
                 mime="chemical/x-pdb",
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.button("⬇️ Target PDB", disabled=True, use_container_width=True)
+            st.button("⬇️ Target PDB", disabled=True, width="stretch")
     
     with col2:
         binder_pdb = binder.pdb_content or binder.scaffold_pdb
@@ -2886,10 +2912,10 @@ def render_results_dashboard(session: WorkflowSession):
                 data=binder_pdb.encode('utf-8') if isinstance(binder_pdb, str) else binder_pdb,
                 file_name=f"{session.project_name}_binder.pdb",
                 mime="chemical/x-pdb",
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.button("⬇️ Binder PDB", disabled=True, use_container_width=True)
+            st.button("⬇️ Binder PDB", disabled=True, width="stretch")
     
     with col3:
         if complex_data.complex_pdb:
@@ -2898,10 +2924,10 @@ def render_results_dashboard(session: WorkflowSession):
                 data=complex_data.complex_pdb.encode('utf-8') if isinstance(complex_data.complex_pdb, str) else complex_data.complex_pdb,
                 file_name=f"{session.project_name}_complex.pdb",
                 mime="chemical/x-pdb",
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.button("⬇️ Complex PDB", disabled=True, use_container_width=True)
+            st.button("⬇️ Complex PDB", disabled=True, width="stretch")
     
     st.markdown("### Sequence Files")
     col1, col2 = st.columns(2)
@@ -2913,10 +2939,10 @@ def render_results_dashboard(session: WorkflowSession):
                 data=binder.mpnn_fasta_content,
                 file_name=f"{session.project_name}_sequences.fa",
                 mime="text/plain",
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.button("⬇️ All MPNN Sequences", disabled=True, use_container_width=True)
+            st.button("⬇️ All MPNN Sequences", disabled=True, width="stretch")
     
     with col2:
         export_data = session.to_json()
@@ -2925,7 +2951,7 @@ def render_results_dashboard(session: WorkflowSession):
             data=export_data,
             file_name=f"{session.project_name}_complete.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
             type="primary"
         )
     
@@ -2950,11 +2976,11 @@ def render_results_dashboard(session: WorkflowSession):
         st.markdown("**🔧 Actions:**")
         
         # Stack buttons vertically with consistent spacing
-        if st.button("🔄 Design New Binder", use_container_width=True):
+        if st.button("🔄 Design New Binder", width="stretch"):
             session.advance_to_stage(WorkflowStage.BINDER_SCAFFOLD_DESIGN)
             st.rerun()
         
-        if st.button("🆕 Start New Project", use_container_width=True):
+        if st.button("🆕 Start New Project", width="stretch"):
             st.session_state.workflow_session = WorkflowSession.create_new()
             st.rerun()
     
@@ -3011,7 +3037,7 @@ def main():
             st.error("Pipeline diagram not found.")
         
         # Back button
-        if st.button("🔙 Back to Workflow", use_container_width=True, type="primary"):
+        if st.button("🔙 Back to Workflow", width="stretch", type="primary"):
             st.session_state.show_pipeline = False
             st.rerun()
         return

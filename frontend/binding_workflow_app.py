@@ -2963,12 +2963,12 @@ def render_results_dashboard(session: WorkflowSession):
     nav_col1, nav_col2 = st.columns(2)
     
     with nav_col1:
-        if st.button("← Back to Analysis", use_container_width=True):
+        if st.button("← Back to Analysis", key="results_back_to_analysis", width="stretch"):
             session.advance_to_stage(WorkflowStage.COMPLEX_PREDICTION)
             st.rerun()
     
     with nav_col2:
-        if st.button("🔄 Start New Design", use_container_width=True, type="primary"):
+        if st.button("🔄 Start New Design", key="rerun", width="stretch"):
             session.advance_to_stage(WorkflowStage.TARGET_INPUT)
             st.rerun()
 

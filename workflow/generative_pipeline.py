@@ -161,6 +161,86 @@ def validate_and_fix_contigs(pdb_content: str, contigs: str) -> Tuple[str, List[
     
     return fixed_contigs, warnings
 
+def _is_zip_bytes(data: bytes) -> bool:
+    return zipfile.is_zipfile(io.BytesIO(data))
+
+def _normalize_to_pdb_text(payload) -> str:
+    """
+    Accepts payload as dict/list/str and returns a single PDB/CIF text string.
+    Handles common shapes:
+    - list[str] of PDB lines/chunks -> JOIN
+    - dict with keys output_pdb/pdb/result/outputs/pdbs
+    - AF3-like keys model_pdb_content/model_pdb_base64/model_cif_content
+    - raw string PDB
+    """
+    if payload is None:
+        raise ValueError("Empty payload; cannot extract PDB.")
+
+    # list -> almost always lines/chunks; join into one text blob
+    if isinstance(payload, list):
+        joined = "".join(x for x in payload if isinstance(x, str))
+        if not joined.strip():
+            raise ValueError("List payload joined to empty text.")
+        return joined
+
+    # dict -> look for known keys
+    if isinstance(payload, dict):
+        if payload.get("error"):
+            raise RuntimeError(f"Model error: {payload['error']}")
+
+        # AF3-style keys (safe to support here too)
+        if payload.get("model_pdb_content"):
+            return payload["model_pdb_content"]
+        if payload.get("model_pdb_base64"):
+            return base64.b64decode(payload["model_pdb_base64"]).decode("utf-8", "ignore")
+        if payload.get("model_cif_content"):
+            return payload["model_cif_content"]
+
+        # Common AF2/NIM-style keys
+        for k in ("output_pdb", "pdb", "pdb_text", "result", "outputs", "pdbs"):
+            if k in payload:
+                v = payload[k]
+                if isinstance(v, str):
+                    return v
+                if isinstance(v, list):
+                    return "".join(x for x in v if isinstance(x, str))
+
+        raise ValueError(f"Could not find PDB in dict payload. Keys: {list(payload.keys())}")
+
+    # str -> could already be PDB/CIF text
+    if isinstance(payload, str):
+        if not payload.strip():
+            raise ValueError("String payload is empty.")
+        return payload
+
+    raise TypeError(f"Unhandled payload type: {type(payload)}")
+
+def _extract_pdb_from_zip_bytes(zbytes: bytes) -> str:
+    """
+    Extract PDB text from zip bytes. Supports:
+    - direct *.pdb members
+    - *.response member containing JSON list/dict/str
+    """
+    with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zf:
+        names = zf.namelist()
+
+        # Prefer direct PDB file if present
+        pdb_members = [n for n in names if n.lower().endswith(".pdb")]
+        if pdb_members:
+            raw = zf.read(pdb_members[0])
+            return raw.decode("utf-8", "ignore")
+
+        # Otherwise parse *.response JSON
+        resp_members = [n for n in names if n.lower().endswith(".response")]
+        if resp_members:
+            raw = zf.read(resp_members[0])
+            text = raw.decode("utf-8", "ignore")
+            payload = json.loads(text)
+            return _normalize_to_pdb_text(payload)
+
+        raise ValueError(f"ZIP did not contain .pdb or .response members. Members: {names}")
+
+
 
 class GenerativePipeline:
     """Orchestrates the generative protein binder design workflow"""
@@ -951,28 +1031,57 @@ class GenerativePipeline:
                     result = self._poll_async_multimer(response)
                 else:
                     raise Exception(f"Multimer API error: {response.status_code} - {response.text}")
+
+                content = result.content
+
+                raw_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.bin"
+                raw_path = self.output_dir / raw_filename
+                with open(raw_path, "wb") as f:
+                    f.write(content)
+
+                # If Zip file
+                if _is_zip_bytes(content):
+                    zip_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.zip"
+                    zip_path = self.output_dir / zip_filename
+                    with open(zip_path, "wb") as f:
+                        f.write(content)
+                    self.session.complex.multimer_zip_path = str(zip_path)
+
+                    complex_pdb = _extract_pdb_from_zip_bytes(content)
+
+                else:
+                    # Not a zip: JSON or raw text
+                    try:
+                        payload = result.json()
+                    except Exception:
+                        # fall back to text (decode bytes safely)
+                        payload = result.text
+
+                    complex_pdb = _normalize_to_pdb_text(payload)
+                    
+                # # Save ZIP file
+                # zip_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.zip"
+                # zip_path = self.output_dir / zip_filename
+                # with open(zip_path, 'wb') as f:
+                #     f.write(result.content)
+                # self.session.complex.multimer_zip_path = str(zip_path)
                 
-                # Save ZIP file
-                zip_filename = f"{self.session.project_name}_multimer_{sequence_idx+1}.zip"
-                zip_path = self.output_dir / zip_filename
-                with open(zip_path, 'wb') as f:
-                    f.write(result.content)
-                self.session.complex.multimer_zip_path = str(zip_path)
+                # # Extract PDB from ZIP
+                # with zipfile.ZipFile(zip_path, 'r') as zf:
+                #     names = zf.namelist()
+                #     for name in names:
+                #         raw = zf.read(name)
+                #         text = raw.decode("utf-8", "ignore")
+                #         obj = json.loads(text)
+                #         complex_pdb = "".join(obj) if isinstance(obj, list) else str(obj)
                 
-                # Extract PDB from ZIP
-                with zipfile.ZipFile(zip_path, 'r') as zf:
-                    names = zf.namelist()
-                    for name in names:
-                        raw = zf.read(name)
-                        text = raw.decode("utf-8", "ignore")
-                        obj = json.loads(text)
-                        complex_pdb = "".join(obj) if isinstance(obj, list) else str(obj)
-                
-                self.session.complex.docking_method = "alphafold2_multimer"
-                self.session.complex.multimer_model_used = selected_models[0] if selected_models else 1
+                # self.session.complex.docking_method = "alphafold2_multimer"
+                # self.session.complex.multimer_model_used = selected_models[0] if selected_models else 1
             
             # Store results
             self.session.complex.complex_pdb = complex_pdb
+            self.session.complex.docking_method = "alphafold2_multimer"
+            self.session.complex.multimer_model_used = selected_models[0] if selected_models else 1
             
             # Save PDB
             pdb_filename = f"{self.session.project_name}_complex_{sequence_idx+1}.pdb"

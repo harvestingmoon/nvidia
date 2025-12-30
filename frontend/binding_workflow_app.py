@@ -1,7 +1,7 @@
 """
 Binding Protein Design Workflow Application
 Multi-step workflow for designing and analyzing protein binders
-ESMFold → RFDiffusion → ProteinMPNN → DiffDock
+AlphaFold2 → RFDiffusion → ProteinMPNN → AlphaFold Multimer
 """
 
 import streamlit as st

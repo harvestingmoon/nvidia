@@ -3045,8 +3045,8 @@ def main():
     # NVIDIA Branded Header
     st.markdown("""
     <div class="nvidia-header">
-        <h1>🧬 Protein Binding Design Workflow</h1>
-        <p>ESMFold → RFDiffusion → ProteinMPNN → DiffDock</p>
+        <h1>🧬 Protein Binder Design Workflow</h1>
+        <p>AlphaFold2 → RFDiffusion → ProteinMPNN → AlphaFold Multimer</p>
     </div>
     """, unsafe_allow_html=True)
     

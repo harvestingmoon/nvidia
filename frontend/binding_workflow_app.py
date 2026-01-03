@@ -1,7 +1,7 @@
 """
 Binding Protein Design Workflow Application
 Multi-step workflow for designing and analyzing protein binders
-ESMFold → RFDiffusion → ProteinMPNN → DiffDock
+AlphaFold2 → RFDiffusion → ProteinMPNN → AlphaFold Multimer
 """
 
 import streamlit as st
@@ -3020,7 +3020,7 @@ def main():
     st.markdown("""
     <div class="nvidia-header">
         <h1>🧬 Protein Binding Design Workflow</h1>
-        <p>ESMFold → RFDiffusion → ProteinMPNN → DiffDock</p>
+        <p>AlphaFold2 → RFDiffusion → ProteinMPNN → AlphaFold Multimer</p>
     </div>
     """, unsafe_allow_html=True)
     

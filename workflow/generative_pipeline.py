@@ -641,13 +641,13 @@ class GenerativePipeline:
         self.session.update_stage_status(WorkflowStage.BINDER_SCAFFOLD_DESIGN, StageStatus.IN_PROGRESS)
         
         try:
-            # Prepare input - use only ATOM lines, limit to first 400
+            # Prepare input - use only ATOM lines
             print(f"[DEBUG] Filtering ATOM lines from target PDB...")
             target_pdb_lines = [
                 line for line in self.session.target.pdb_content.split("\n")
                 if line.startswith("ATOM")
             ]
-            print(f"[DEBUG] Found {len(target_pdb_lines)} ATOM lines, using first 400")
+            print(f"[DEBUG] Found {len(target_pdb_lines)} ATOM lines")
             target_pdb_input = "\n".join(target_pdb_lines)
             
             # Get available residues for validation
@@ -777,7 +777,7 @@ class GenerativePipeline:
                 line for line in self.session.binder.scaffold_pdb.split("\n")
                 if line.startswith("ATOM")
             ]
-            print(f"[DEBUG] Found {len(scaffold_lines)} ATOM lines, using first 400")
+            print(f"[DEBUG] Found {len(scaffold_lines)} ATOM lines")
             scaffold_input = "\n".join(scaffold_lines)
             
             # Call ProteinMPNN

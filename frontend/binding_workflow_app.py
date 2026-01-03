@@ -2665,12 +2665,12 @@ def render_results_stage():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("← Back to Analysis", use_container_width=True):
+        if st.button("← Back to Analysis", key="results_back_to_analysis", width="stretch"):
             session.advance_to_stage(WorkflowStage.COMPLEX_ANALYSIS)
             st.rerun()
     
     with col2:
-        if st.button("🔄 Start New Design", use_container_width=True):
+        if st.button("🔄 Start New Design", key="results_start_new_design", width="stretch"):
             st.session_state.workflow_session = WorkflowSession.create_new()
             st.rerun()
 

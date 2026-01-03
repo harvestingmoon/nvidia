@@ -1,0 +1,3 @@
+COVID_SPIKE_complex_2.pdb	69.467567
+COVID_SPIKE_complex_1.pdb	68.909665
+COVID_SPIKE_complex_3.pdb	68.821338

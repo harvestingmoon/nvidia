@@ -1,0 +1,3 @@
+pdl_1_complex_3.pdb	70.327459
+pdl_1_complex_2.pdb	68.443734
+pdl_1_complex_1.pdb	67.764385

@@ -648,7 +648,7 @@ class GenerativePipeline:
                 if line.startswith("ATOM")
             ]
             print(f"[DEBUG] Found {len(target_pdb_lines)} ATOM lines, using first 400")
-            target_pdb_input = "\n".join(target_pdb_lines[:400])
+            target_pdb_input = "\n".join(target_pdb_lines)
             
             # Get available residues for validation
             available_residues = extract_residues_from_pdb(target_pdb_input)
@@ -778,7 +778,7 @@ class GenerativePipeline:
                 if line.startswith("ATOM")
             ]
             print(f"[DEBUG] Found {len(scaffold_lines)} ATOM lines, using first 400")
-            scaffold_input = "\n".join(scaffold_lines[:400])
+            scaffold_input = "\n".join(scaffold_lines)
             
             # Call ProteinMPNN
             payload = {

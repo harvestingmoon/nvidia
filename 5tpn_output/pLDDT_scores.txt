@@ -1,0 +1,3 @@
+5tpn_complex_3.pdb	72.327829
+5tpn_complex_1.pdb	72.060393
+5tpn_complex_2.pdb	71.950218

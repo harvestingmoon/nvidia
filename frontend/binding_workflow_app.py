@@ -5,6 +5,7 @@ AlphaFold2 → RFDiffusion → ProteinMPNN → AlphaFold Multimer
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 import json
 import sys
@@ -828,6 +829,10 @@ def initialize_session_state():
     # Show pipeline diagram by default on first load
     if 'show_pipeline' not in st.session_state:
         st.session_state.show_pipeline = True
+    
+    # Examples gallery state
+    if 'show_examples' not in st.session_state:
+        st.session_state.show_examples = False
 
 
 def render_progress_stepper():
@@ -1004,6 +1009,7 @@ def render_sidebar():
     if st.session_state.get('show_pipeline', False):
         if st.sidebar.button("Prediction Page", key="logo_home", use_container_width=True, help="Click to go to Prediction Page"):
             st.session_state.show_pipeline = False
+            st.session_state._stage_nav_clicked = True  # Signal to close gallery
             session.advance_to_stage(WorkflowStage.TARGET_INPUT)
             st.rerun()
     else:
@@ -1066,6 +1072,27 @@ def render_sidebar():
         # Show warning if no API key is configured
         if not st.session_state.api_key:
             st.sidebar.warning("⚠️ No API key configured. Please add NVIDIA_API_KEY to your .env file or enter it above.")
+    
+    # NVIDIA-styled divider
+    st.sidebar.markdown("""
+        <hr style="height:3px;border:none;background:linear-gradient(90deg, #76B900 0%, #00D4AA 100%);margin:20px 0;" />
+    """, unsafe_allow_html=True)
+    
+    # Examples Gallery - toggle button
+    st.sidebar.subheader("📚 Examples Gallery")
+    if st.session_state.get('show_examples', False):
+        # Show "Prediction Page" button when viewing examples
+        if st.sidebar.button("🔙 Prediction Page", use_container_width=True, help="Return to prediction workflow"):
+            st.session_state.show_examples = False
+            st.session_state.show_pipeline = False  # Ensure pipeline view is closed
+            st.session_state._stage_nav_clicked = True
+            session.advance_to_stage(WorkflowStage.TARGET_INPUT)
+            st.rerun()
+    else:
+        # Show "View Binder Examples" button when in prediction page
+        if st.sidebar.button("🧬 View Binder Examples", use_container_width=True, help="View gallery of successfully designed binders"):
+            st.session_state.show_examples = True
+            st.rerun()
 
 
 def save_session():
@@ -2973,6 +3000,166 @@ def render_results_dashboard(session: WorkflowSession):
             st.rerun()
 
 
+def render_examples_gallery():
+    """Render examples gallery page"""
+    # Header
+    st.markdown("""
+    <div style="text-align: center; padding: 20px 0;">
+        <h1>🧬 PROTEIN BINDER EXAMPLES GALLERY</h1>
+        <p style="font-size: 18px; color: #6c757d; margin-top: 10px;">
+            Explore computationally designed protein binders targeting key therapeutic targets
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Example metadata
+    EXAMPLES = {
+        "COVID_SPIKE_multimer_3.bin": {
+            "name": "COVID-19 Spike Protein Binder",
+            "target": "SARS-CoV-2 Spike Protein (RBD)",
+            "description": "A computationally designed binder targeting the receptor-binding domain (RBD) of the SARS-CoV-2 spike protein. This binder could potentially neutralize the virus by blocking ACE2 receptor binding.",
+            "use_case": "Antiviral Therapeutics",
+            "confidence": "High",
+            "applications": ["COVID-19 treatment", "Diagnostic tools", "Vaccine research"],
+            "icon": "🦠"
+        },
+        "EGFR_multimer_1.bin": {
+            "name": "EGFR Inhibitor Binder",
+            "target": "Epidermal Growth Factor Receptor",
+            "description": "A designed protein binder targeting EGFR, a receptor tyrosine kinase that plays a crucial role in cell proliferation. Overactive EGFR signaling is implicated in multiple cancers.",
+            "use_case": "Cancer Therapeutics",
+            "confidence": "Very High",
+            "applications": ["Cancer treatment", "Targeted therapy", "Biomarker detection"],
+            "icon": "🎗️"
+        },
+        "KRAS_G12D_multimer_1.bin": {
+            "name": "KRAS G12D Mutant Binder",
+            "target": "KRAS G12D Oncogenic Mutant",
+            "description": "A precision binder designed to target the KRAS G12D mutation, one of the most common oncogenic drivers in pancreatic, lung, and colorectal cancers. This represents a 'undruggable' target made accessible.",
+            "use_case": "Precision Oncology",
+            "confidence": "Very High",
+            "applications": ["Pancreatic cancer", "Lung cancer", "Colorectal cancer"],
+            "icon": "🧬"
+        },
+        "pdl_1_multimer_3.bin": {
+            "name": "PD-L1 Checkpoint Inhibitor",
+            "target": "Programmed Death-Ligand 1 (PD-L1)",
+            "description": "An immune checkpoint inhibitor targeting PD-L1, which cancer cells use to evade immune detection. Blocking PD-L1 can restore T-cell activity against tumors.",
+            "use_case": "Cancer Immunotherapy",
+            "confidence": "High",
+            "applications": ["Immunotherapy", "Melanoma", "Lung cancer", "Bladder cancer"],
+            "icon": "🛡️"
+        },
+        "5tpn_multimer_3.bin": {
+            "name": "Insulin Receptor Binder",
+            "target": "Insulin Receptor (5TPN)",
+            "description": "A designed binder targeting the insulin receptor, with potential applications in diabetes research, biosensing, and development of novel insulin delivery systems.",
+            "use_case": "Metabolic Disease Research",
+            "confidence": "High",
+            "applications": ["Diabetes research", "Biosensors", "Drug delivery"],
+            "icon": "💉"
+        }
+    }
+    
+    # Info banner
+    st.info("💡 **Tip:** Click 'View 3D Structure' on any example to interact - rotate, zoom, and inspect residues!")
+    
+    # Load examples directory
+    examples_dir = Path(__file__).parent.parent / "examples_examples"
+    
+    if not examples_dir.exists():
+        st.error(f"Examples directory not found: {examples_dir}")
+        if st.button("🔙 Back to Workflow", type="primary"):
+            st.session_state.show_examples = False
+            st.rerun()
+        return
+    
+    # Render examples
+    for filename, metadata in EXAMPLES.items():
+        # Example card
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
+                    border-left: 4px solid #76B900; border-radius: 8px; 
+                    padding: 20px; margin-bottom: 20px; 
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="color: #1A1A1A; font-size: 24px; font-weight: 700; margin-bottom: 10px;">
+                {metadata['icon']} {metadata['name']}
+            </div>
+            <div style="color: #495057; font-size: 14px; line-height: 1.6; margin-bottom: 15px;">
+                <strong>Target:</strong> {metadata['target']}<br>
+                {metadata['description']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Metrics row
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Use Case", metadata['use_case'].split()[0])
+        with col2:
+            st.metric("Confidence", metadata['confidence'])
+        with col3:
+            st.metric("Applications", len(metadata['applications']))
+        
+        file_path = examples_dir / filename
+        if file_path.exists():
+            # Load binary PDB - handle both ZIP and plain text
+            try:
+                with open(file_path, 'rb') as f:
+                    file_bytes = f.read()
+                
+                # Check if it's a ZIP file
+                import zipfile
+                import io
+                
+                pdb_content = None
+                try:
+                    # Try to read as ZIP first (EGFR and Insulin examples)
+                    with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                        # Extract the first file which contains PDB text
+                        first_file = zf.namelist()[0]
+                        pdb_content = zf.read(first_file).decode('utf-8', errors='ignore')
+                
+                except zipfile.BadZipFile:
+                    # Not a ZIP, try as plain text (COVID_SPIKE, KRAS_G12D, pdl_1)
+                    pdb_content = file_bytes.decode('utf-8', errors='ignore')
+                
+                if not pdb_content or 'ATOM' not in pdb_content:
+                    st.error(f"Could not extract valid PDB data from {filename}")
+                    with col4:
+                        st.metric("Atoms", "N/A")
+                    continue
+                
+                with col4:
+                    atom_count = pdb_content.count('ATOM')
+                    st.metric("Atoms", f"{atom_count:,}")
+                
+                # 3D Visualization
+                with st.expander("🔬 View 3D Structure", expanded=False):
+                    try:
+                        html_content = create_3d_visualization(pdb_content, color_by_plddt=True)
+                        components.html(html_content, height=600, scrolling=False)
+                    except Exception as e:
+                        st.error(f"Visualization error: {str(e)}")
+                
+                # Applications
+                with st.expander("📋 Potential Applications"):
+                    for app in metadata['applications']:
+                        st.markdown(f"• **{app}**")
+                        
+            except Exception as e:
+                st.error(f"Error loading {filename}: {str(e)}")
+        else:
+            st.warning(f"File not found: {filename}")
+        
+        st.markdown("<hr style='margin: 30px 0; border: 1px solid #e9ecef;'>", unsafe_allow_html=True)
+    
+    # Back button
+    if st.button("🔙 Back to Workflow", type="primary", use_container_width=True):
+        st.session_state.show_examples = False
+        st.rerun()
+
+
 def main():
     """Main application"""
     initialize_session_state()
@@ -2998,6 +3185,17 @@ def main():
     
     # Sidebar
     render_sidebar()
+    
+    # Show examples gallery if button was clicked AND user hasn't navigated to a different stage
+    # If user clicks a stage nav button while in gallery, it should close the gallery and show that stage
+    session = st.session_state.workflow_session
+    if st.session_state.get('show_examples', False) and not st.session_state.get('_stage_nav_clicked', False):
+        render_examples_gallery()
+        return
+    elif st.session_state.get('_stage_nav_clicked', False):
+        # User clicked a stage navigation button, close gallery
+        st.session_state.show_examples = False
+        st.session_state._stage_nav_clicked = False
     
     # Show pipeline if button was clicked
     if st.session_state.get('show_pipeline', False):
